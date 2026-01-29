@@ -159,25 +159,32 @@ export function useAuth() {
           timeoutPromise
         ]) as Awaited<ReturnType<typeof supabase.auth.getSession>>;
         
-        if (error) {
-          console.error('Session error, clearing auth:', error);
-          await supabase.auth.signOut();
-          if (isMounted) setUser(null);
-          return;
-        }
+      if (error) {
+        console.error('Session error, clearing auth:', error);
+        // Limpar localStorage diretamente para evitar travamento
+        Object.keys(localStorage).forEach(key => {
+          if (key.startsWith('sb-')) {
+            localStorage.removeItem(key);
+          }
+        });
+        if (isMounted) setUser(null);
+        return;
+      }
 
         if (session?.user && isMounted) {
           const profile = await loadUserProfile(session.user);
           if (isMounted) setUser(profile);
         }
-      } catch (error) {
-        console.error('Auth initialization failed:', error);
-        // Em caso de erro, limpar sessão corrompida
-        try {
-          await supabase.auth.signOut();
-        } catch {}
-        if (isMounted) setUser(null);
-      } finally {
+    } catch (error) {
+      console.error('Auth initialization failed:', error);
+      // Limpar localStorage diretamente (mais seguro que signOut que pode travar)
+      Object.keys(localStorage).forEach(key => {
+        if (key.startsWith('sb-')) {
+          localStorage.removeItem(key);
+        }
+      });
+      if (isMounted) setUser(null);
+    } finally {
         if (isMounted) setIsLoading(false);
       }
     };
