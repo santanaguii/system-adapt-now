@@ -13,9 +13,15 @@ interface NotesListProps {
 }
 
 export function NotesList({ dates, currentDate, onSelectDate, onClose }: NotesListProps) {
+  // Parse date string to local Date (avoiding UTC interpretation)
+  const parseDateString = (dateStr: string): Date => {
+    const [year, month, day] = dateStr.split('-').map(Number);
+    return new Date(year, month - 1, day);
+  };
+
   // Group dates by month
   const groupedDates = dates.reduce((acc, date) => {
-    const monthKey = format(new Date(date), 'MMMM yyyy', { locale: ptBR });
+    const monthKey = format(parseDateString(date), 'MMMM yyyy', { locale: ptBR });
     if (!acc[monthKey]) {
       acc[monthKey] = [];
     }
@@ -49,7 +55,7 @@ export function NotesList({ dates, currentDate, onSelectDate, onClose }: NotesLi
                     )}
                   >
                     <FileText className="h-3.5 w-3.5 flex-shrink-0" />
-                    <span>{format(new Date(date), "d 'de' MMMM", { locale: ptBR })}</span>
+                    <span>{format(parseDateString(date), "d 'de' MMMM", { locale: ptBR })}</span>
                   </button>
                 ))}
               </div>
