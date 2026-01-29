@@ -1,243 +1,231 @@
 
-# Plano: Conectar ao Supabase Externo
+# Plano: Adicionar Seleção de Tags na Criação de Atividades
 
-## Resumo
-
-Migrar toda a persistência de dados do **localStorage** para o seu projeto Supabase externo, mantendo cada usuário com dados completamente independentes (notas, atividades, tags, campos customizados e configurações).
+## Objetivo
+Permitir selecionar tags (opcionais) ao criar uma nova atividade, tanto no modo **simples** quanto no modo **detalhado**.
 
 ---
 
-## Estrutura de Isolamento por Usuário
+## Visão Geral das Mudanças
 
-```text
-Usuário A                          Usuário B
-─────────────────────             ─────────────────────
-├── Notas de A                    ├── Notas de B
-├── Atividades de A               ├── Atividades de B
-├── Tags de A                     ├── Tags de B
-│   └── "Trabalho", "Casa"        │   └── "Projeto X", "Urgente"
-├── Campos Customizados de A      ├── Campos Customizados de B
-│   └── "Cliente", "Valor"        │   └── "Responsável", "Status"
-└── Configurações de A            └── Configurações de B
+### Modo Simples (atual)
+```
+[Input: Nova atividade...] [+]
 ```
 
-Cada tabela possui a coluna `user_id` com políticas RLS que garantem acesso apenas aos próprios dados.
-
----
-
-## Etapa 1: Atualizar Credenciais
-
-Modificar o arquivo `.env` para apontar para seu Supabase:
-
-| Variável | Valor |
-|----------|-------|
-| VITE_SUPABASE_URL | https://rezbeuxknwdykpphomcq.supabase.co |
-| VITE_SUPABASE_PUBLISHABLE_KEY | eyJhbGci... (sua chave) |
-| VITE_SUPABASE_PROJECT_ID | rezbeuxknwdykpphomcq |
-
----
-
-## Etapa 2: Reescrever Autenticação
-
-### Arquivo: `src/hooks/useAuth.ts`
-
-**Mudanças principais:**
-
-| Antes (localStorage) | Depois (Supabase) |
-|---------------------|-------------------|
-| Hash SHA-256 no navegador | `supabase.auth.signUp()` |
-| Array `app_users` | Tabela `profiles` + auth.users |
-| `current_user_id` local | Sessão automática do Supabase |
-
-**Estratégia para manter login com username:**
-- Converter username para email interno: `joao` → `joao@app.internal`
-- Supabase Auth gerencia a sessão
-- Tabela `profiles` armazena username e pergunta de segurança
-
-**Fluxos:**
-
-```text
-CADASTRO
-────────
-1. Verificar se username existe (RPC check_username_exists)
-2. supabase.auth.signUp({ email: username@app.internal, password })
-3. Inserir na tabela profiles { id, username, security_question, security_answer_hash }
-4. Criar dados padrão (tags, campos, settings)
-
-LOGIN
-─────
-1. supabase.auth.signInWithPassword({ email: username@app.internal, password })
-2. Buscar perfil na tabela profiles
-3. Retornar usuário autenticado
-
-RECUPERAR SENHA
-───────────────
-1. Buscar pergunta via RPC get_security_question(username)
-2. Verificar resposta via RPC verify_security_answer(username, hash)
-3. Se válido: supabase.auth.updateUser({ password: newPassword })
+### Modo Simples (novo)
+```
+[Input: Nova atividade...] [🏷️] [+]
+         [Tag1] [Tag2]  <- badges das tags selecionadas
 ```
 
----
+### Modo Detalhado (atual)
+- Dialog com: Título + Campos customizados (prazo, prioridade, etc.)
 
-## Etapa 3: Reescrever Notas
-
-### Arquivo: `src/hooks/useNotes.ts`
-
-**Mudanças:**
-- Buscar notas do banco filtradas por `user_id`
-- Salvar linhas com debounce (1 segundo)
-- Manter undo/redo no estado local (não persistir histórico)
-
-**Funções:**
-
-| Função | Antes | Depois |
-|--------|-------|--------|
-| `getNote` | localStorage | `supabase.from('notes').select()` |
-| `saveNote` | localStorage | `supabase.from('notes').upsert()` |
-| `updateLine` | localStorage | `supabase.from('note_lines').update()` |
-| `addLine` | localStorage | `supabase.from('note_lines').insert()` |
-| `deleteLine` | localStorage | `supabase.from('note_lines').delete()` |
-
-**Estrutura no banco:**
-
-```text
-notes (user_id, date, updated_at)
-  └── note_lines (note_id, content, line_type, indent, collapsed, sort_order)
-```
-
----
-
-## Etapa 4: Reescrever Atividades
-
-### Arquivo: `src/hooks/useActivities.ts`
-
-**Mudanças:**
-- CRUD completo via Supabase
-- Manter ordenação manual (sort_order)
-- Otimistic updates para UX fluida
-
-**Funções:**
-
-| Função | Implementação |
-|--------|---------------|
-| `addActivity` | `supabase.from('activities').insert()` |
-| `updateActivity` | `supabase.from('activities').update()` |
-| `deleteActivity` | `supabase.from('activities').delete()` |
-| `toggleComplete` | `supabase.from('activities').update()` |
-| `reorderActivities` | Batch update de sort_order |
-
----
-
-## Etapa 5: Reescrever Configurações
-
-### Arquivo: `src/hooks/useSettings.ts`
-
-**Separação em 3 tabelas (cada uma isolada por user_id):**
-
-| Dado | Tabela |
-|------|--------|
-| Tags | `tags` (user_id, name, color) |
-| Campos customizados | `custom_fields` (user_id, key, name, field_type, options...) |
-| Configurações gerais | `user_settings` (user_id, allow_reopen, default_sort...) |
-
-**Dados padrão no primeiro acesso:**
-
-Ao cadastrar um novo usuário, criar automaticamente:
-
-- **3 Tags:** Trabalho, Pessoal, Urgente
-- **3 Campos:** Prazo (date), Prioridade (single_select), Descrição (long_text)
-- **Configurações:** allowReopenCompleted=true, defaultSort=manual, creationMode=simple
-
----
-
-## Etapa 6: Atualizar AuthContext
-
-### Arquivo: `src/contexts/AuthContext.tsx`
-
-**Mudanças:**
-- Registrar `onAuthStateChange` ANTES de `getSession()`
-- Carregar perfil após detectar sessão
-- Limpar estado ao fazer logout
+### Modo Detalhado (novo)
+- Dialog com: Título + **Seção de Tags** + Campos customizados
 
 ---
 
 ## Arquivos a Modificar
 
-| Arquivo | Ação |
-|---------|------|
-| `.env` | Atualizar credenciais para seu Supabase |
-| `src/hooks/useAuth.ts` | Reescrever para Supabase Auth + profiles |
-| `src/hooks/useNotes.ts` | Reescrever para buscar/salvar no banco |
-| `src/hooks/useActivities.ts` | Reescrever para CRUD no banco |
-| `src/hooks/useSettings.ts` | Reescrever para sincronizar 3 tabelas |
-| `src/contexts/AuthContext.tsx` | Ajustar para sessão do Supabase |
-
----
-
-## Segurança: Isolamento por Usuário
-
-Todas as tabelas usam RLS com a regra:
-
-```sql
-USING (auth.uid() = user_id)
-```
-
-Isso garante que:
-- Usuário A nunca vê dados de B
-- Tags de A não aparecem para B
-- Campos customizados de A são exclusivos de A
-- Cada usuário tem seu próprio ambiente
-
----
-
-## Funcionalidades Preservadas
-
-| Funcionalidade | Status |
-|----------------|--------|
-| Login com username | Mantido (email interno) |
-| Cadastro com pergunta segurança | Mantido |
-| Recuperação de senha | Mantido |
-| Editor de notas hierárquico | Mantido |
-| Tipos de linha (título, subtítulo, etc) | Mantido |
-| Indentação e colapso | Mantido |
-| Undo/Redo | Mantido (local) |
-| Atalhos de teclado | Mantido |
-| Atividades com drag-and-drop | Mantido |
-| Tags coloridas | Mantido (por usuário) |
-| Campos customizados | Mantido (por usuário) |
-| Filtros e ordenação | Mantido |
-
----
-
-## Ordem de Implementação
-
-1. Atualizar `.env` com suas credenciais
-2. Reescrever `useAuth.ts` para Supabase Auth
-3. Atualizar `AuthContext.tsx` para sessão
-4. Reescrever `useSettings.ts` com seed de dados padrão
-5. Reescrever `useNotes.ts` com debounce
-6. Reescrever `useActivities.ts` com otimistic updates
-7. Testar fluxo completo
+| Arquivo | Alteração |
+|---------|-----------|
+| `src/hooks/useActivities.ts` | Adicionar parâmetro opcional `initialTags` na função `addActivity` |
+| `src/components/activities/ActivityList.tsx` | Adicionar UI de seleção de tags nos dois modos |
+| `src/pages/Index.tsx` | Atualizar tipagem do `onAdd` (se necessário) |
 
 ---
 
 ## Detalhes Técnicos
 
-### Hash da Resposta de Segurança
+### 1. Hook `useActivities.ts` (Linha 76)
 
-Manterei o mesmo método SHA-256 usado atualmente. O hash é calculado no frontend e armazenado na tabela `profiles`.
+**Antes:**
+```typescript
+const addActivity = useCallback(async (title: string) => {
+  ...
+  tags: [],
+```
 
-### Debounce para Notas
+**Depois:**
+```typescript
+const addActivity = useCallback(async (title: string, initialTags?: string[]) => {
+  ...
+  tags: initialTags || [],
+```
 
-Para evitar muitas requisições durante digitação, as notas serão salvas com debounce de 1 segundo.
+### 2. Componente `ActivityList.tsx`
 
-### Otimistic Updates
+#### 2.1 Novo estado para tags na criação
+Adicionar após linha 149:
+```typescript
+const [newActivityTags, setNewActivityTags] = useState<string[]>([]);
+```
 
-Para melhor experiência, as atividades atualizam a interface imediatamente enquanto a requisição é processada em background.
+#### 2.2 Atualizar interface `ActivityListProps` (Linha 63)
+```typescript
+onAdd: (title: string, tags?: string[]) => Promise<Activity | null> | Activity | null;
+```
 
-### Criação de Dados Padrão
+#### 2.3 Atualizar handlers de criação
 
-No cadastro, após criar o perfil, automaticamente crio:
-- Tags padrão na tabela `tags`
-- Campos padrão na tabela `custom_fields`
-- Configurações na tabela `user_settings`
+**handleAddActivitySimple (Linha 162):**
+```typescript
+const handleAddActivitySimple = () => {
+  if (newActivityTitle.trim()) {
+    onAdd(newActivityTitle.trim(), newActivityTags.length > 0 ? newActivityTags : undefined);
+    setNewActivityTitle('');
+    setNewActivityTags([]); // Reset após criar
+  }
+};
+```
+
+**handleAddActivityDetailed (Linha 169):**
+```typescript
+const handleAddActivityDetailed = async () => {
+  if (newActivityTitle.trim()) {
+    const newActivity = await onAdd(newActivityTitle.trim(), newActivityTags.length > 0 ? newActivityTags : undefined);
+    if (newActivity && Object.keys(newActivityFields).length > 0) {
+      onUpdate(newActivity.id, { customFields: newActivityFields as Activity['customFields'] });
+    }
+    setNewActivityTitle('');
+    setNewActivityFields({});
+    setNewActivityTags([]); // Reset após criar
+    setShowNewActivityDialog(false);
+  }
+};
+```
+
+#### 2.4 UI do Modo Simples (Linhas 372-384)
+
+Adicionar um Popover com seleção de tags ao lado do input:
+
+```tsx
+<div className="flex flex-col gap-2 px-4 py-3 border-b">
+  <div className="flex items-center gap-2">
+    <Input
+      placeholder="Nova atividade..."
+      value={newActivityTitle}
+      onChange={(e) => setNewActivityTitle(e.target.value)}
+      onKeyDown={handleKeyDown}
+      className="flex-1"
+    />
+    {/* Botão de Tags */}
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button variant="outline" size="icon" className="shrink-0">
+          <Tag className="h-4 w-4" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-64 p-2">
+        <div className="space-y-1">
+          <p className="text-sm font-medium mb-2">Selecionar tags</p>
+          <div className="flex flex-wrap gap-1">
+            {tags.map((tag) => (
+              <Badge
+                key={tag.id}
+                variant={newActivityTags.includes(tag.id) ? "default" : "outline"}
+                className="cursor-pointer"
+                onClick={() => toggleNewActivityTag(tag.id)}
+                style={{
+                  backgroundColor: newActivityTags.includes(tag.id) ? tag.color : 'transparent',
+                  borderColor: tag.color,
+                  color: newActivityTags.includes(tag.id) ? 'white' : tag.color
+                }}
+              >
+                {tag.name}
+              </Badge>
+            ))}
+          </div>
+        </div>
+      </PopoverContent>
+    </Popover>
+    <Button size="icon" onClick={handlePlusClick} disabled={!newActivityTitle.trim()}>
+      <Plus className="h-4 w-4" />
+    </Button>
+  </div>
+  {/* Tags selecionadas */}
+  {newActivityTags.length > 0 && (
+    <div className="flex flex-wrap gap-1">
+      {newActivityTags.map((tagId) => {
+        const tag = tags.find(t => t.id === tagId);
+        if (!tag) return null;
+        return (
+          <Badge
+            key={tagId}
+            style={{ backgroundColor: tag.color }}
+            className="text-white text-xs"
+          >
+            {tag.name}
+          </Badge>
+        );
+      })}
+    </div>
+  )}
+</div>
+```
+
+#### 2.5 UI do Modo Detalhado (Dialog - após Título, antes dos campos customizados)
+
+Adicionar seção de tags no dialog (após linha 495):
+
+```tsx
+{/* Seção de Tags (opcional) */}
+<div className="space-y-2">
+  <Label>Tags</Label>
+  <div className="flex flex-wrap gap-2">
+    {tags.map((tag) => (
+      <Badge
+        key={tag.id}
+        variant={newActivityTags.includes(tag.id) ? "default" : "outline"}
+        className="cursor-pointer transition-colors"
+        onClick={() => toggleNewActivityTag(tag.id)}
+        style={{
+          backgroundColor: newActivityTags.includes(tag.id) ? tag.color : 'transparent',
+          borderColor: tag.color,
+          color: newActivityTags.includes(tag.id) ? 'white' : tag.color
+        }}
+      >
+        {tag.name}
+      </Badge>
+    ))}
+    {tags.length === 0 && (
+      <span className="text-sm text-muted-foreground">
+        Nenhuma tag disponível. Crie tags nas configurações.
+      </span>
+    )}
+  </div>
+</div>
+```
+
+#### 2.6 Função helper para toggle de tags
+Adicionar após linha 218:
+
+```typescript
+const toggleNewActivityTag = useCallback((tagId: string) => {
+  setNewActivityTags((prev) =>
+    prev.includes(tagId) ? prev.filter((id) => id !== tagId) : [...prev, tagId]
+  );
+}, []);
+```
+
+#### 2.7 Importações necessárias
+Adicionar `Tag` ao import do lucide-react:
+```typescript
+import { Plus, Filter, Settings, ChevronDown, ChevronUp, Search, ArrowUpDown, Tag } from 'lucide-react';
+```
+
+Adicionar import do Popover:
+```typescript
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+```
+
+---
+
+## Comportamento
+
+1. **Tags são opcionais** - O usuário pode criar atividades sem selecionar nenhuma tag
+2. **Toggle visual** - Tags selecionadas ficam com fundo colorido, não selecionadas ficam com borda
+3. **Reset após criação** - As tags selecionadas são limpas após criar a atividade
+4. **Mensagem quando vazio** - No modo detalhado, se não houver tags, mostra mensagem orientando a criar nas configurações
