@@ -143,29 +143,63 @@ export function useAuth() {
 
   // Initialize auth state
   useEffect(() => {
-    // Set up auth state listener FIRST
+    let isMounted = true;
+
+    const initializeAuth = async () => {
+      try {
+        // Timeout de segurança - 10 segundos máximo
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Auth timeout')), 10000)
+        );
+        
+        const sessionPromise = supabase.auth.getSession();
+        
+        const { data: { session }, error } = await Promise.race([
+          sessionPromise,
+          timeoutPromise
+        ]) as Awaited<ReturnType<typeof supabase.auth.getSession>>;
+        
+        if (error) {
+          console.error('Session error, clearing auth:', error);
+          await supabase.auth.signOut();
+          if (isMounted) setUser(null);
+          return;
+        }
+
+        if (session?.user && isMounted) {
+          const profile = await loadUserProfile(session.user);
+          if (isMounted) setUser(profile);
+        }
+      } catch (error) {
+        console.error('Auth initialization failed:', error);
+        // Em caso de erro, limpar sessão corrompida
+        try {
+          await supabase.auth.signOut();
+        } catch {}
+        if (isMounted) setUser(null);
+      } finally {
+        if (isMounted) setIsLoading(false);
+      }
+    };
+
+    // Set up auth state listener for ONGOING changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
+        if (!isMounted) return;
+        
         if (session?.user) {
           const profile = await loadUserProfile(session.user);
-          setUser(profile);
+          if (isMounted) setUser(profile);
         } else {
           setUser(null);
         }
-        setIsLoading(false);
       }
     );
 
-    // Then check for existing session
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      if (session?.user) {
-        const profile = await loadUserProfile(session.user);
-        setUser(profile);
-      }
-      setIsLoading(false);
-    });
+    initializeAuth();
 
     return () => {
+      isMounted = false;
       subscription.unsubscribe();
     };
   }, [loadUserProfile]);
