@@ -31,9 +31,15 @@ export function NotesSidebar({ dates, currentDate, onSelectDate, onSearch }: Not
     }
   }, [searchQuery, onSearch]);
 
+  // Parse date string to local Date (avoiding UTC interpretation)
+  const parseDateString = (dateStr: string): Date => {
+    const [year, month, day] = dateStr.split('-').map(Number);
+    return new Date(year, month - 1, day);
+  };
+
   // Group dates by month
   const groupedDates = dates.reduce((acc, date) => {
-    const monthKey = format(new Date(date), 'MMMM yyyy', { locale: ptBR });
+    const monthKey = format(parseDateString(date), 'MMMM yyyy', { locale: ptBR });
     if (!acc[monthKey]) {
       acc[monthKey] = [];
     }
@@ -99,7 +105,7 @@ export function NotesSidebar({ dates, currentDate, onSelectDate, onSearch }: Not
                   <button
                     key={result.date}
                     onClick={() => {
-                      onSelectDate(new Date(result.date));
+                      onSelectDate(parseDateString(result.date));
                       setSearchQuery('');
                     }}
                     className={cn(
@@ -108,7 +114,7 @@ export function NotesSidebar({ dates, currentDate, onSelectDate, onSearch }: Not
                     )}
                   >
                     <span className="font-medium">
-                      {format(new Date(result.date), "d 'de' MMMM", { locale: ptBR })}
+                      {format(parseDateString(result.date), "d 'de' MMMM", { locale: ptBR })}
                     </span>
                     <span className="text-xs text-muted-foreground truncate">
                       {result.lines[0]?.content.substring(0, 60)}...
@@ -133,7 +139,7 @@ export function NotesSidebar({ dates, currentDate, onSelectDate, onSearch }: Not
                   {monthDates.map((date) => (
                     <button
                       key={date}
-                      onClick={() => onSelectDate(new Date(date))}
+                      onClick={() => onSelectDate(parseDateString(date))}
                       className={cn(
                         'w-full flex items-center gap-2 px-3 py-2 rounded text-sm hover:bg-muted transition-colors text-left',
                         date === currentDateStr && 'bg-primary/10 text-primary'
@@ -141,7 +147,7 @@ export function NotesSidebar({ dates, currentDate, onSelectDate, onSearch }: Not
                     >
                       <FileText className="h-4 w-4 flex-shrink-0" />
                       <span className="flex-1">
-                        {format(new Date(date), "d 'de' MMMM", { locale: ptBR })}
+                        {format(parseDateString(date), "d 'de' MMMM", { locale: ptBR })}
                       </span>
                       {isToday(date) && (
                         <span className="text-xs bg-primary/20 text-primary px-1.5 py-0.5 rounded">
