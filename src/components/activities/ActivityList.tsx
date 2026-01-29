@@ -7,8 +7,9 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { 
   Plus, Filter, Settings, ChevronDown, ChevronUp, Search, 
-  ArrowUpDown
+  ArrowUpDown, Tag as TagIcon
 } from 'lucide-react';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -60,7 +61,7 @@ interface ActivityListProps {
   activities: { active: Activity[]; completed: Activity[] };
   tags: Tag[];
   customFields: CustomField[];
-  onAdd: (title: string) => Promise<Activity | null> | Activity | null;
+  onAdd: (title: string, tags?: string[]) => Promise<Activity | null> | Activity | null;
   onUpdate: (id: string, updates: Partial<Activity>) => void;
   onDelete: (id: string) => void;
   onToggleComplete: (id: string) => void;
@@ -146,6 +147,7 @@ export function ActivityList({
   const [isSearching, setIsSearching] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [showNewActivityDialog, setShowNewActivityDialog] = useState(false);
+  const [newActivityTags, setNewActivityTags] = useState<string[]>([]);
   const [newActivityFields, setNewActivityFields] = useState<Record<string, unknown>>({});
 
   const sensors = useSensors(
@@ -161,19 +163,21 @@ export function ActivityList({
 
   const handleAddActivitySimple = () => {
     if (newActivityTitle.trim()) {
-      onAdd(newActivityTitle.trim());
+      onAdd(newActivityTitle.trim(), newActivityTags.length > 0 ? newActivityTags : undefined);
       setNewActivityTitle('');
+      setNewActivityTags([]);
     }
   };
 
   const handleAddActivityDetailed = async () => {
     if (newActivityTitle.trim()) {
-      const newActivity = await onAdd(newActivityTitle.trim());
+      const newActivity = await onAdd(newActivityTitle.trim(), newActivityTags.length > 0 ? newActivityTags : undefined);
       if (newActivity && Object.keys(newActivityFields).length > 0) {
         onUpdate(newActivity.id, { customFields: newActivityFields as Activity['customFields'] });
       }
       setNewActivityTitle('');
       setNewActivityFields({});
+      setNewActivityTags([]);
       setShowNewActivityDialog(false);
     }
   };
@@ -213,6 +217,12 @@ export function ActivityList({
 
   const toggleTagFilter = useCallback((tagId: string) => {
     setSelectedTags((prev) =>
+      prev.includes(tagId) ? prev.filter((id) => id !== tagId) : [...prev, tagId]
+    );
+  }, []);
+
+  const toggleNewActivityTag = useCallback((tagId: string) => {
+    setNewActivityTags((prev) =>
       prev.includes(tagId) ? prev.filter((id) => id !== tagId) : [...prev, tagId]
     );
   }, []);
@@ -370,17 +380,71 @@ export function ActivityList({
 
       {/* Add activity input - only show in simple mode */}
       {activityCreationMode === 'simple' ? (
-        <div className="flex items-center gap-2 px-4 py-3 border-b">
-          <Input
-            placeholder="Nova atividade..."
-            value={newActivityTitle}
-            onChange={(e) => setNewActivityTitle(e.target.value)}
-            onKeyDown={handleKeyDown}
-            className="flex-1"
-          />
-          <Button size="icon" onClick={handlePlusClick} disabled={!newActivityTitle.trim()}>
-            <Plus className="h-4 w-4" />
-          </Button>
+        <div className="flex flex-col gap-2 px-4 py-3 border-b">
+          <div className="flex items-center gap-2">
+            <Input
+              placeholder="Nova atividade..."
+              value={newActivityTitle}
+              onChange={(e) => setNewActivityTitle(e.target.value)}
+              onKeyDown={handleKeyDown}
+              className="flex-1"
+            />
+            {/* Tag selector popover */}
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="outline" size="icon" className="shrink-0">
+                  <TagIcon className="h-4 w-4" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-64 p-3" align="end">
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">Selecionar tags</p>
+                  <div className="flex flex-wrap gap-1">
+                    {tags.length > 0 ? tags.map((tag) => (
+                      <Badge
+                        key={tag.id}
+                        variant={newActivityTags.includes(tag.id) ? "default" : "outline"}
+                        className="cursor-pointer transition-colors"
+                        onClick={() => toggleNewActivityTag(tag.id)}
+                        style={{
+                          backgroundColor: newActivityTags.includes(tag.id) ? tag.color : 'transparent',
+                          borderColor: tag.color,
+                          color: newActivityTags.includes(tag.id) ? 'white' : tag.color
+                        }}
+                      >
+                        {tag.name}
+                      </Badge>
+                    )) : (
+                      <span className="text-sm text-muted-foreground">
+                        Nenhuma tag disponível
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </PopoverContent>
+            </Popover>
+            <Button size="icon" onClick={handlePlusClick} disabled={!newActivityTitle.trim()}>
+              <Plus className="h-4 w-4" />
+            </Button>
+          </div>
+          {/* Selected tags display */}
+          {newActivityTags.length > 0 && (
+            <div className="flex flex-wrap gap-1">
+              {newActivityTags.map((tagId) => {
+                const tag = tags.find(t => t.id === tagId);
+                if (!tag) return null;
+                return (
+                  <Badge
+                    key={tagId}
+                    style={{ backgroundColor: tag.color }}
+                    className="text-white text-xs"
+                  >
+                    {tag.name}
+                  </Badge>
+                );
+              })}
+            </div>
+          )}
         </div>
       ) : (
         <div className="flex items-center justify-center px-4 py-3 border-b">
@@ -492,6 +556,32 @@ export function ActivityList({
                 onChange={(e) => setNewActivityTitle(e.target.value)}
                 placeholder="Nome da atividade"
               />
+            </div>
+            
+            {/* Tags section */}
+            <div className="space-y-2">
+              <Label>Tags</Label>
+              <div className="flex flex-wrap gap-2">
+                {tags.length > 0 ? tags.map((tag) => (
+                  <Badge
+                    key={tag.id}
+                    variant={newActivityTags.includes(tag.id) ? "default" : "outline"}
+                    className="cursor-pointer transition-colors"
+                    onClick={() => toggleNewActivityTag(tag.id)}
+                    style={{
+                      backgroundColor: newActivityTags.includes(tag.id) ? tag.color : 'transparent',
+                      borderColor: tag.color,
+                      color: newActivityTags.includes(tag.id) ? 'white' : tag.color
+                    }}
+                  >
+                    {tag.name}
+                  </Badge>
+                )) : (
+                  <span className="text-sm text-muted-foreground">
+                    Nenhuma tag disponível. Crie tags nas configurações.
+                  </span>
+                )}
+              </div>
             </div>
             {customFields.filter(f => f.enabled).map((field) => (
               <div key={field.id} className="space-y-2">

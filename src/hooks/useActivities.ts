@@ -73,7 +73,7 @@ export function useActivities(sortOption: SortOption = 'manual', customFields: C
     loadActivities();
   }, [isAuthenticated, user]);
 
-  const addActivity = useCallback(async (title: string) => {
+  const addActivity = useCallback(async (title: string, initialTags?: string[]) => {
     if (!user) return null;
 
     const defaultValues: Record<string, string | number | boolean | Date | string[] | null> = {};
@@ -88,7 +88,7 @@ export function useActivities(sortOption: SortOption = 'manual', customFields: C
       title,
       status: 'open',
       completed: false,
-      tags: [],
+      tags: initialTags || [],
       customFields: defaultValues,
       order: activities.filter((a) => !a.completed).length,
       createdAt: new Date(),
