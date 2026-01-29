@@ -1,0 +1,141 @@
+{% extends "base.html" %}
+
+{% block title %}
+{% if mode == 'login' %}Entrar{% elif mode == 'register' %}Criar Conta{% else %}Recuperar Senha{% endif %} - Meu Sistema
+{% endblock %}
+
+{% block content %}
+<div class="auth-container">
+    <div class="auth-card glass">
+        <div class="auth-header">
+            <h1 class="auth-title">📝 Meu Sistema</h1>
+            <p class="auth-subtitle">Notas e Atividades</p>
+        </div>
+
+        {% if error %}
+        <div class="alert alert-error">
+            {{ error }}
+        </div>
+        {% endif %}
+
+        {% if success %}
+        <div class="alert alert-success">
+            {{ success }}
+        </div>
+        {% endif %}
+
+        <!-- Login Form -->
+        {% if mode == 'login' %}
+        <form action="/auth/login" method="POST" class="auth-form">
+            <div class="form-group">
+                <label for="username">Usuário</label>
+                <input type="text" id="username" name="username" required autofocus 
+                       placeholder="Digite seu usuário">
+            </div>
+            <div class="form-group">
+                <label for="password">Senha</label>
+                <input type="password" id="password" name="password" required
+                       placeholder="Digite sua senha">
+            </div>
+            <button type="submit" class="btn btn-primary btn-block">
+                Entrar
+            </button>
+        </form>
+        <div class="auth-links">
+            <a href="/auth/register">Criar conta</a>
+            <a href="/auth/forgot">Esqueci a senha</a>
+        </div>
+        {% endif %}
+
+        <!-- Register Form -->
+        {% if mode == 'register' %}
+        <form action="/auth/register" method="POST" class="auth-form">
+            <div class="form-group">
+                <label for="username">Usuário</label>
+                <input type="text" id="username" name="username" required autofocus
+                       placeholder="Escolha um nome de usuário">
+            </div>
+            <div class="form-group">
+                <label for="password">Senha</label>
+                <input type="password" id="password" name="password" required minlength="6"
+                       placeholder="Mínimo 6 caracteres">
+            </div>
+            <div class="form-group">
+                <label for="security_question">Pergunta de Segurança</label>
+                <select id="security_question" name="security_question" required>
+                    <option value="">Selecione...</option>
+                    {% for question in security_questions %}
+                    <option value="{{ question }}">{{ question }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="security_answer">Resposta</label>
+                <input type="text" id="security_answer" name="security_answer" required
+                       placeholder="Sua resposta secreta">
+            </div>
+            <button type="submit" class="btn btn-primary btn-block">
+                Criar Conta
+            </button>
+        </form>
+        <div class="auth-links">
+            <a href="/auth/login">Já tenho conta</a>
+        </div>
+        {% endif %}
+
+        <!-- Forgot Password - Step 1 -->
+        {% if mode == 'forgot' %}
+        <form action="/auth/forgot/check" method="POST" class="auth-form">
+            <div class="form-group">
+                <label for="username">Usuário</label>
+                <input type="text" id="username" name="username" required autofocus
+                       placeholder="Digite seu usuário">
+            </div>
+            <button type="submit" class="btn btn-primary btn-block">
+                Continuar
+            </button>
+        </form>
+        <div class="auth-links">
+            <a href="/auth/login">Voltar ao login</a>
+        </div>
+        {% endif %}
+
+        <!-- Forgot Password - Step 2: Answer -->
+        {% if mode == 'forgot_answer' %}
+        <form action="/auth/forgot/verify" method="POST" class="auth-form">
+            <input type="hidden" name="username" value="{{ username }}">
+            <div class="form-group">
+                <label>Pergunta de Segurança</label>
+                <p class="security-question">{{ security_question }}</p>
+            </div>
+            <div class="form-group">
+                <label for="security_answer">Sua Resposta</label>
+                <input type="text" id="security_answer" name="security_answer" required autofocus
+                       placeholder="Digite sua resposta">
+            </div>
+            <button type="submit" class="btn btn-primary btn-block">
+                Verificar
+            </button>
+        </form>
+        <div class="auth-links">
+            <a href="/auth/login">Voltar ao login</a>
+        </div>
+        {% endif %}
+
+        <!-- Forgot Password - Step 3: Reset -->
+        {% if mode == 'reset' %}
+        <form action="/auth/forgot/reset" method="POST" class="auth-form">
+            <input type="hidden" name="username" value="{{ username }}">
+            <div class="form-group">
+                <label for="new_password">Nova Senha</label>
+                <input type="password" id="new_password" name="new_password" required minlength="6"
+                       placeholder="Mínimo 6 caracteres">
+            </div>
+            <button type="submit" class="btn btn-primary btn-block">
+                Redefinir Senha
+            </button>
+        </form>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

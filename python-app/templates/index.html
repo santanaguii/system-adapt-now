@@ -1,0 +1,322 @@
+{% extends "base.html" %}
+
+{% block title %}Meu Sistema - Notas e Atividades{% endblock %}
+
+{% block content %}
+<div class="app-container">
+    <!-- Header -->
+    <header class="app-header glass">
+        <div class="header-left">
+            <h1 class="app-title">📝 Meu Sistema</h1>
+        </div>
+        <div class="header-right">
+            <span class="user-name">{{ user.username }}</span>
+            <button id="btnSettings" class="btn btn-ghost btn-icon" title="Configurações">
+                ⚙️
+            </button>
+            <a href="/auth/logout" class="btn btn-ghost btn-icon" title="Sair">
+                🚪
+            </a>
+        </div>
+    </header>
+
+    <!-- Main content -->
+    <main class="app-main">
+        <!-- Notes Sidebar -->
+        <aside class="panel notes-sidebar" id="notesSidebar">
+            <div class="panel-header">
+                <h2 class="panel-title">📅 Notas</h2>
+                <button id="btnTodayNote" class="btn btn-ghost btn-sm" title="Ir para hoje">
+                    Hoje
+                </button>
+            </div>
+            <div class="search-box">
+                <input type="text" id="notesSearch" placeholder="Pesquisar notas..." class="input">
+            </div>
+            <div class="notes-list" id="notesList">
+                <!-- Lista de notas será carregada via JS -->
+            </div>
+        </aside>
+
+        <!-- Resizer -->
+        <div class="panel-resizer" id="resizer1"></div>
+
+        <!-- Note Editor -->
+        <section class="panel note-editor" id="noteEditor">
+            <div class="panel-header">
+                <div class="date-nav">
+                    <button id="btnPrevDay" class="btn btn-ghost btn-icon">◀</button>
+                    <button id="btnCalendar" class="btn btn-ghost date-display">
+                        <span id="currentDate">Carregando...</span>
+                    </button>
+                    <button id="btnNextDay" class="btn btn-ghost btn-icon">▶</button>
+                    <span id="todayBadge" class="badge badge-primary" style="display: none;">Hoje</span>
+                </div>
+                <div class="editor-actions">
+                    <button id="btnUndo" class="btn btn-ghost btn-icon" title="Desfazer (Ctrl+Z)" disabled>↩️</button>
+                    <button id="btnRedo" class="btn btn-ghost btn-icon" title="Refazer (Ctrl+Y)" disabled>↪️</button>
+                </div>
+            </div>
+            <div class="shortcuts-hint">
+                <span>Ctrl+1: Título</span>
+                <span>Ctrl+2: Subtítulo</span>
+                <span>Ctrl+3: Citação</span>
+                <span>Ctrl+4: Tópico</span>
+                <span>Ctrl+0: Parágrafo</span>
+                <span>Tab: Indentação</span>
+            </div>
+            <div class="editor-content" id="editorContent">
+                <!-- Linhas do editor serão carregadas via JS -->
+            </div>
+            <div class="editor-footer">
+                <span id="saveStatus">Salvo automaticamente</span>
+            </div>
+        </section>
+
+        <!-- Resizer -->
+        <div class="panel-resizer" id="resizer2"></div>
+
+        <!-- Activities Panel -->
+        <section class="panel activities-panel" id="activitiesPanel">
+            <div class="panel-header">
+                <h2 class="panel-title">✅ Atividades</h2>
+                <div class="panel-actions">
+                    <select id="sortSelect" class="select select-sm">
+                        <option value="manual">Manual</option>
+                        <option value="dueDate_asc">Prazo ↑</option>
+                        <option value="dueDate_desc">Prazo ↓</option>
+                        <option value="createdAt_desc">Recentes</option>
+                    </select>
+                </div>
+            </div>
+            
+            <!-- Activity creation -->
+            <div class="activity-create" id="activityCreate">
+                <input type="text" id="newActivityTitle" placeholder="Nova atividade..." class="input">
+                <button id="btnAddActivity" class="btn btn-primary btn-icon">+</button>
+            </div>
+
+            <!-- Filters -->
+            <div class="activity-filters" id="activityFilters">
+                <div class="tags-filter" id="tagsFilter">
+                    <!-- Tags serão carregadas via JS -->
+                </div>
+            </div>
+
+            <!-- Activities list -->
+            <div class="activities-list" id="activitiesList">
+                <!-- Atividades serão carregadas via JS -->
+            </div>
+
+            <!-- Show completed toggle -->
+            <div class="completed-toggle">
+                <label class="checkbox-label">
+                    <input type="checkbox" id="showCompleted">
+                    <span>Mostrar concluídas</span>
+                </label>
+            </div>
+        </section>
+    </main>
+</div>
+
+<!-- Settings Modal -->
+<div class="modal" id="settingsModal">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content glass">
+        <div class="modal-header">
+            <h2>⚙️ Configurações</h2>
+            <button class="btn btn-ghost btn-icon modal-close">✕</button>
+        </div>
+        <div class="modal-body">
+            <div class="tabs">
+                <button class="tab active" data-tab="general">Geral</button>
+                <button class="tab" data-tab="fields">Campos</button>
+                <button class="tab" data-tab="tags">Tags</button>
+            </div>
+
+            <!-- General Settings -->
+            <div class="tab-content active" id="tabGeneral">
+                <div class="setting-item">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="allowReopenCompleted" checked>
+                        <span>Permitir reabrir atividades concluídas</span>
+                    </label>
+                </div>
+                <div class="setting-item">
+                    <label>Modo de criação de atividades</label>
+                    <select id="creationMode" class="select">
+                        <option value="simple">Simples (só título)</option>
+                        <option value="detailed">Detalhado (todos os campos)</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Custom Fields -->
+            <div class="tab-content" id="tabFields">
+                <button id="btnAddField" class="btn btn-secondary btn-sm mb-3">+ Novo Campo</button>
+                <div class="fields-list" id="fieldsList">
+                    <!-- Campos serão carregados via JS -->
+                </div>
+            </div>
+
+            <!-- Tags -->
+            <div class="tab-content" id="tabTags">
+                <button id="btnAddTag" class="btn btn-secondary btn-sm mb-3">+ Nova Tag</button>
+                <div class="tags-list" id="tagsList">
+                    <!-- Tags serão carregadas via JS -->
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Activity Edit Modal -->
+<div class="modal" id="activityModal">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content glass">
+        <div class="modal-header">
+            <h2 id="activityModalTitle">Editar Atividade</h2>
+            <button class="btn btn-ghost btn-icon modal-close">✕</button>
+        </div>
+        <div class="modal-body">
+            <form id="activityForm">
+                <input type="hidden" id="activityId">
+                <div class="form-group">
+                    <label for="activityTitle">Título</label>
+                    <input type="text" id="activityTitle" class="input" required>
+                </div>
+                <div class="form-group">
+                    <label for="activityDescription">Descrição</label>
+                    <textarea id="activityDescription" class="textarea" rows="3"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Tags</label>
+                    <div class="tags-select" id="activityTags">
+                        <!-- Tags checkboxes serão carregadas via JS -->
+                    </div>
+                </div>
+                <div id="customFieldsContainer">
+                    <!-- Campos customizados serão carregados via JS -->
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-ghost modal-close">Cancelar</button>
+                    <button type="submit" class="btn btn-primary">Salvar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Calendar Modal -->
+<div class="modal" id="calendarModal">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content glass modal-sm">
+        <div class="modal-header">
+            <h2>📅 Selecionar Data</h2>
+            <button class="btn btn-ghost btn-icon modal-close">✕</button>
+        </div>
+        <div class="modal-body">
+            <div class="calendar" id="calendar">
+                <!-- Calendário será renderizado via JS -->
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Field Edit Modal -->
+<div class="modal" id="fieldModal">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content glass">
+        <div class="modal-header">
+            <h2 id="fieldModalTitle">Novo Campo</h2>
+            <button class="btn btn-ghost btn-icon modal-close">✕</button>
+        </div>
+        <div class="modal-body">
+            <form id="fieldForm">
+                <input type="hidden" id="fieldId">
+                <div class="form-group">
+                    <label for="fieldName">Nome do Campo</label>
+                    <input type="text" id="fieldName" class="input" required>
+                </div>
+                <div class="form-group">
+                    <label for="fieldType">Tipo</label>
+                    <select id="fieldType" class="select">
+                        <option value="text">Texto</option>
+                        <option value="long_text">Texto Longo</option>
+                        <option value="date">Data</option>
+                        <option value="datetime">Data e Hora</option>
+                        <option value="number">Número</option>
+                        <option value="currency">Moeda</option>
+                        <option value="boolean">Sim/Não</option>
+                        <option value="single_select">Seleção Única</option>
+                        <option value="multi_select">Seleção Múltipla</option>
+                    </select>
+                </div>
+                <div class="form-group" id="fieldOptionsGroup" style="display: none;">
+                    <label for="fieldOptions">Opções (uma por linha)</label>
+                    <textarea id="fieldOptions" class="textarea" rows="4"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Exibir em</label>
+                    <select id="fieldDisplay" class="select">
+                        <option value="both">Lista e Detalhes</option>
+                        <option value="list">Apenas Lista</option>
+                        <option value="detail">Apenas Detalhes</option>
+                    </select>
+                </div>
+                <div class="setting-item">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="fieldRequired">
+                        <span>Campo obrigatório</span>
+                    </label>
+                </div>
+                <div class="setting-item">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="fieldEnabled" checked>
+                        <span>Campo habilitado</span>
+                    </label>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-ghost modal-close">Cancelar</button>
+                    <button type="submit" class="btn btn-primary">Salvar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Tag Edit Modal -->
+<div class="modal" id="tagModal">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content glass modal-sm">
+        <div class="modal-header">
+            <h2 id="tagModalTitle">Nova Tag</h2>
+            <button class="btn btn-ghost btn-icon modal-close">✕</button>
+        </div>
+        <div class="modal-body">
+            <form id="tagForm">
+                <input type="hidden" id="tagId">
+                <div class="form-group">
+                    <label for="tagName">Nome</label>
+                    <input type="text" id="tagName" class="input" required>
+                </div>
+                <div class="form-group">
+                    <label for="tagColor">Cor</label>
+                    <input type="color" id="tagColor" class="input-color" value="#f59e0b">
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-ghost modal-close">Cancelar</button>
+                    <button type="submit" class="btn btn-primary">Salvar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+<script src="/static/js/notes.js"></script>
+<script src="/static/js/activities.js"></script>
+<script src="/static/js/auth.js"></script>
+{% endblock %}

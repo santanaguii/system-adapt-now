@@ -1,0 +1,409 @@
+import { useState, useEffect, useCallback } from 'react';
+import { supabase } from '@/integrations/supabase/client';
+import type { User as SupabaseUser } from '@supabase/supabase-js';
+
+export interface User {
+  id: string;
+  username: string;
+  createdAt: Date;
+}
+
+// Simple hash function for security answer (same as before)
+async function hashString(str: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(str);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+// Convert username to internal email
+function usernameToEmail(username: string): string {
+  return `${username.toLowerCase().trim()}@app.internal`;
+}
+
+export const SECURITY_QUESTIONS = [
+  'Qual o nome do seu primeiro animal de estimação?',
+  'Qual o nome da sua mãe?',
+  'Em qual cidade você nasceu?',
+  'Qual o nome da sua escola primária?',
+  'Qual era sua comida favorita na infância?',
+];
+
+// Default tags for new users
+const DEFAULT_TAGS = [
+  { name: 'Trabalho', color: 'hsl(35, 80%, 50%)' },
+  { name: 'Pessoal', color: 'hsl(200, 70%, 50%)' },
+  { name: 'Urgente', color: 'hsl(0, 70%, 55%)' },
+];
+
+// Default custom fields for new users
+const DEFAULT_CUSTOM_FIELDS = [
+  { 
+    key: 'dueDate',
+    name: 'Prazo', 
+    field_type: 'date', 
+    enabled: true,
+    required: false,
+    display: 'both',
+    sort_order: 0
+  },
+  { 
+    key: 'priority',
+    name: 'Prioridade', 
+    field_type: 'single_select', 
+    options: ['Baixa', 'Média', 'Alta'], 
+    enabled: true,
+    required: false,
+    display: 'both',
+    sort_order: 1
+  },
+  {
+    key: 'description',
+    name: 'Descrição',
+    field_type: 'long_text',
+    enabled: true,
+    required: false,
+    display: 'detail',
+    sort_order: 2
+  },
+];
+
+// Type definitions for external Supabase tables
+interface Profile {
+  id: string;
+  username: string;
+  security_question: string;
+  security_answer_hash: string;
+  created_at: string;
+  updated_at: string;
+}
+
+interface TagRow {
+  id: string;
+  user_id: string;
+  name: string;
+  color: string;
+}
+
+interface CustomFieldRow {
+  id: string;
+  user_id: string;
+  key: string;
+  name: string;
+  field_type: string;
+  options: string[] | null;
+  enabled: boolean;
+  required: boolean;
+  default_value: unknown;
+  validation: unknown;
+  display: string;
+  sort_order: number;
+}
+
+interface UserSettingsRow {
+  id: string;
+  user_id: string;
+  allow_reopen_completed: boolean;
+  default_sort: string;
+  activity_creation_mode: string;
+}
+
+export function useAuth() {
+  const [user, setUser] = useState<User | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Load user profile from database
+  const loadUserProfile = useCallback(async (supabaseUser: SupabaseUser) => {
+    try {
+      const { data: profile, error } = await supabase
+        .from('profiles' as never)
+        .select('username, created_at')
+        .eq('id', supabaseUser.id)
+        .maybeSingle() as { data: Pick<Profile, 'username' | 'created_at'> | null; error: unknown };
+
+      if (error) {
+        console.error('Error loading profile:', error);
+        return null;
+      }
+
+      if (profile) {
+        return {
+          id: supabaseUser.id,
+          username: profile.username,
+          createdAt: new Date(profile.created_at),
+        };
+      }
+      return null;
+    } catch (error) {
+      console.error('Error loading profile:', error);
+      return null;
+    }
+  }, []);
+
+  // Initialize auth state
+  useEffect(() => {
+    // Set up auth state listener FIRST
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        if (session?.user) {
+          const profile = await loadUserProfile(session.user);
+          setUser(profile);
+        } else {
+          setUser(null);
+        }
+        setIsLoading(false);
+      }
+    );
+
+    // Then check for existing session
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (session?.user) {
+        const profile = await loadUserProfile(session.user);
+        setUser(profile);
+      }
+      setIsLoading(false);
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [loadUserProfile]);
+
+  // Create default data for new user
+  const createDefaultData = useCallback(async (userId: string) => {
+    try {
+      // Create default tags
+      const tagsToInsert = DEFAULT_TAGS.map(tag => ({
+        user_id: userId,
+        name: tag.name,
+        color: tag.color,
+      }));
+      await supabase.from('tags' as never).insert(tagsToInsert as never);
+
+      // Create default custom fields
+      const fieldsToInsert = DEFAULT_CUSTOM_FIELDS.map(field => ({
+        user_id: userId,
+        ...field,
+      }));
+      await supabase.from('custom_fields' as never).insert(fieldsToInsert as never);
+
+      // Create default settings
+      await supabase.from('user_settings' as never).insert({
+        user_id: userId,
+        allow_reopen_completed: true,
+        default_sort: 'manual',
+        activity_creation_mode: 'simple',
+      } as never);
+    } catch (error) {
+      console.error('Error creating default data:', error);
+    }
+  }, []);
+
+  const signUp = useCallback(async (
+    username: string, 
+    password: string,
+    securityQuestion: string,
+    securityAnswer: string
+  ): Promise<{ success: boolean; error?: string }> => {
+    // Validate inputs
+    if (!username.trim() || !password) {
+      return { success: false, error: 'Usuário e senha são obrigatórios' };
+    }
+    if (password.length < 6) {
+      return { success: false, error: 'Senha deve ter pelo menos 6 caracteres' };
+    }
+    if (!securityQuestion || !securityAnswer.trim()) {
+      return { success: false, error: 'Pergunta e resposta de segurança são obrigatórias' };
+    }
+    
+    try {
+      // Check if username exists using RPC (optional - may not exist in external Supabase)
+      try {
+        const { data: exists, error: checkError } = await supabase
+          .rpc('check_username_exists' as never, { p_username: username } as never) as { data: boolean | null; error: unknown };
+
+        if (!checkError && exists) {
+          return { success: false, error: 'Este usuário já existe' };
+        }
+        // If there's an error, we'll let the signUp handle duplicates
+        if (checkError) {
+          console.warn('check_username_exists RPC not available, skipping check:', checkError);
+        }
+      } catch (rpcError) {
+        console.warn('RPC check skipped:', rpcError);
+      }
+
+      // Create user in Supabase Auth
+      const email = usernameToEmail(username);
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email,
+        password,
+      });
+
+      if (authError) {
+        console.error('Auth error:', authError);
+        // Check for specific errors
+        if (authError.message?.includes('already registered') || authError.message?.includes('already exists')) {
+          return { success: false, error: 'Este usuário já existe' };
+        }
+        if (authError.message?.includes('weak_password') || authError.message?.includes('6 characters')) {
+          return { success: false, error: 'Senha deve ter pelo menos 6 caracteres' };
+        }
+        return { success: false, error: `Erro ao criar conta: ${authError.message}` };
+      }
+
+      if (!authData.user) {
+        return { success: false, error: 'Erro ao criar conta' };
+      }
+
+      // Hash security answer
+      const securityAnswerHash = await hashString(securityAnswer.toLowerCase().trim());
+
+      // Create profile
+      const { error: profileError } = await supabase
+        .from('profiles' as never)
+        .insert({
+          id: authData.user.id,
+          username: username.trim(),
+          security_question: securityQuestion,
+          security_answer_hash: securityAnswerHash,
+        } as never);
+
+      if (profileError) {
+        console.error('Profile error:', profileError);
+        // Try to clean up the auth user
+        await supabase.auth.signOut();
+        return { success: false, error: 'Erro ao criar perfil' };
+      }
+
+      // Create default data (tags, custom fields, settings)
+      await createDefaultData(authData.user.id);
+
+      // Set user state
+      setUser({
+        id: authData.user.id,
+        username: username.trim(),
+        createdAt: new Date(),
+      });
+
+      return { success: true };
+    } catch (error) {
+      console.error('SignUp error:', error);
+      return { success: false, error: 'Erro ao criar conta' };
+    }
+  }, [createDefaultData]);
+
+  const signIn = useCallback(async (username: string, password: string): Promise<{ success: boolean; error?: string }> => {
+    try {
+      const email = usernameToEmail(username);
+      
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      if (error) {
+        if (error.message.includes('Invalid login credentials')) {
+          return { success: false, error: 'Usuário ou senha incorretos' };
+        }
+        return { success: false, error: 'Erro ao fazer login' };
+      }
+
+      if (!data.user) {
+        return { success: false, error: 'Erro ao fazer login' };
+      }
+
+      // Profile will be loaded by onAuthStateChange
+      return { success: true };
+    } catch (error) {
+      console.error('SignIn error:', error);
+      return { success: false, error: 'Erro ao fazer login' };
+    }
+  }, []);
+
+  const signOut = useCallback(async () => {
+    await supabase.auth.signOut();
+    setUser(null);
+  }, []);
+
+  const getSecurityQuestion = useCallback(async (username: string): Promise<string | null> => {
+    try {
+      const { data, error } = await supabase
+        .rpc('get_security_question' as never, { p_username: username } as never) as { data: string | null; error: unknown };
+
+      if (error) {
+        console.error('Error getting security question:', error);
+        return null;
+      }
+
+      return data;
+    } catch (error) {
+      console.error('Error getting security question:', error);
+      return null;
+    }
+  }, []);
+
+  const verifySecurityAnswer = useCallback(async (username: string, answer: string): Promise<boolean> => {
+    try {
+      const answerHash = await hashString(answer.toLowerCase().trim());
+      
+      const { data, error } = await supabase
+        .rpc('verify_security_answer' as never, { 
+          p_username: username, 
+          p_answer_hash: answerHash 
+        } as never) as { data: boolean | null; error: unknown };
+
+      if (error) {
+        console.error('Error verifying security answer:', error);
+        return false;
+      }
+
+      return data === true;
+    } catch (error) {
+      console.error('Error verifying security answer:', error);
+      return false;
+    }
+  }, []);
+
+  const resetPassword = useCallback(async (username: string, newPassword: string): Promise<{ success: boolean; error?: string }> => {
+    if (newPassword.length < 6) {
+      return { success: false, error: 'Senha deve ter pelo menos 6 caracteres' };
+    }
+
+    try {
+      // Get user id by username
+      const { data: userId, error: userIdError } = await supabase
+        .rpc('get_user_id_by_username' as never, { p_username: username } as never) as { data: string | null; error: unknown };
+
+      if (userIdError || !userId) {
+        return { success: false, error: 'Usuário não encontrado' };
+      }
+
+      // Update password via current session
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
+
+      if (error) {
+        console.error('Error resetting password:', error);
+        return { success: false, error: 'Erro ao redefinir senha' };
+      }
+
+      return { success: true };
+    } catch (error) {
+      console.error('Error resetting password:', error);
+      return { success: false, error: 'Erro ao redefinir senha' };
+    }
+  }, []);
+
+  return {
+    user,
+    isLoading,
+    isAuthenticated: !!user,
+    signUp,
+    signIn,
+    signOut,
+    getSecurityQuestion,
+    verifySecurityAnswer,
+    resetPassword,
+  };
+}

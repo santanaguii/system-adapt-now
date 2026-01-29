@@ -1,0 +1,243 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+@layer base {
+  :root {
+    /* Warm stone palette */
+    --background: 40 20% 98%;
+    --foreground: 30 10% 15%;
+
+    --card: 40 15% 99%;
+    --card-foreground: 30 10% 15%;
+
+    --popover: 40 15% 99%;
+    --popover-foreground: 30 10% 15%;
+
+    /* Warm amber accent */
+    --primary: 35 90% 50%;
+    --primary-foreground: 40 20% 98%;
+
+    --secondary: 35 15% 94%;
+    --secondary-foreground: 30 10% 25%;
+
+    --muted: 35 10% 93%;
+    --muted-foreground: 30 8% 50%;
+
+    --accent: 35 80% 55%;
+    --accent-foreground: 40 20% 98%;
+
+    --destructive: 0 70% 55%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 35 15% 88%;
+    --input: 35 15% 90%;
+    --ring: 35 90% 50%;
+
+    --radius: 0.75rem;
+
+    /* Activity specific */
+    --activity-completed: 35 70% 50%;
+    --activity-hover: 35 20% 96%;
+    
+    /* Note editor */
+    --editor-title: 30 10% 10%;
+    --editor-subtitle: 30 10% 25%;
+    --editor-quote: 35 60% 45%;
+    --editor-quote-bg: 35 40% 95%;
+
+    /* Sidebar */
+    --sidebar-background: 35 15% 97%;
+    --sidebar-foreground: 30 10% 25%;
+    --sidebar-primary: 35 90% 50%;
+    --sidebar-primary-foreground: 40 20% 98%;
+    --sidebar-accent: 35 20% 94%;
+    --sidebar-accent-foreground: 30 10% 20%;
+    --sidebar-border: 35 15% 90%;
+    --sidebar-ring: 35 90% 50%;
+  }
+
+  .dark {
+    --background: 30 15% 8%;
+    --foreground: 35 15% 92%;
+
+    --card: 30 12% 10%;
+    --card-foreground: 35 15% 92%;
+
+    --popover: 30 12% 10%;
+    --popover-foreground: 35 15% 92%;
+
+    --primary: 35 85% 55%;
+    --primary-foreground: 30 15% 8%;
+
+    --secondary: 30 10% 18%;
+    --secondary-foreground: 35 15% 88%;
+
+    --muted: 30 10% 15%;
+    --muted-foreground: 35 10% 55%;
+
+    --accent: 35 80% 55%;
+    --accent-foreground: 30 15% 8%;
+
+    --destructive: 0 65% 45%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 30 10% 18%;
+    --input: 30 10% 20%;
+    --ring: 35 85% 55%;
+
+    --activity-completed: 35 70% 55%;
+    --activity-hover: 30 10% 12%;
+
+    --editor-title: 35 15% 95%;
+    --editor-subtitle: 35 10% 75%;
+    --editor-quote: 35 60% 55%;
+    --editor-quote-bg: 35 15% 15%;
+
+    --sidebar-background: 30 12% 9%;
+    --sidebar-foreground: 35 15% 88%;
+    --sidebar-primary: 35 85% 55%;
+    --sidebar-primary-foreground: 30 15% 8%;
+    --sidebar-accent: 30 10% 14%;
+    --sidebar-accent-foreground: 35 15% 92%;
+    --sidebar-border: 30 10% 16%;
+    --sidebar-ring: 35 85% 55%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-family: 'Inter', system-ui, sans-serif;
+  }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    @apply bg-transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-border rounded-full;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-muted-foreground/30;
+  }
+}
+
+@layer components {
+  /* Activity item styles */
+  .activity-item {
+    @apply transition-all duration-200 ease-out;
+  }
+
+  .activity-item:hover {
+    @apply bg-activity-hover;
+  }
+
+  .activity-completed {
+    @apply opacity-60;
+  }
+
+  /* Editor line styles */
+  .editor-title {
+    @apply text-2xl font-semibold text-editor-title leading-tight;
+  }
+
+  .editor-subtitle {
+    @apply text-lg font-medium text-editor-subtitle leading-snug;
+  }
+
+  .editor-quote {
+    @apply pl-4 border-l-3 border-editor-quote text-editor-quote italic bg-editor-quote-bg py-2 rounded-r-md;
+  }
+
+  .editor-paragraph {
+    @apply text-base text-foreground leading-relaxed;
+  }
+
+  .editor-bullet {
+    @apply text-base text-foreground pl-4 relative;
+  }
+
+  .editor-bullet::before {
+    content: '•';
+    @apply absolute left-0 text-primary;
+  }
+
+  /* Drag handle */
+  .drag-handle {
+    @apply opacity-0 transition-opacity duration-150;
+  }
+
+  .activity-item:hover .drag-handle {
+    @apply opacity-100;
+  }
+
+  /* Tag styles */
+  .tag {
+    @apply inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium transition-colors;
+  }
+
+  /* Panel divider */
+  .panel-divider {
+    @apply w-px bg-border;
+  }
+
+  /* Floating button */
+  .floating-action {
+    @apply fixed bottom-6 right-6 w-14 h-14 rounded-full bg-primary text-primary-foreground shadow-lg 
+           flex items-center justify-center transition-transform duration-200 hover:scale-110 active:scale-95;
+  }
+}
+
+@layer utilities {
+  .bg-activity-hover {
+    background-color: hsl(var(--activity-hover));
+  }
+
+  .text-editor-title {
+    color: hsl(var(--editor-title));
+  }
+
+  .text-editor-subtitle {
+    color: hsl(var(--editor-subtitle));
+  }
+
+  .text-editor-quote {
+    color: hsl(var(--editor-quote));
+  }
+
+  .bg-editor-quote-bg {
+    background-color: hsl(var(--editor-quote-bg));
+  }
+
+  .border-editor-quote {
+    border-color: hsl(var(--editor-quote));
+  }
+
+  .border-l-3 {
+    border-left-width: 3px;
+  }
+
+  /* Glass effect */
+  .glass {
+    @apply bg-card/80 backdrop-blur-md;
+  }
+
+  /* Smooth transitions */
+  .transition-smooth {
+    @apply transition-all duration-300 ease-out;
+  }
+}
