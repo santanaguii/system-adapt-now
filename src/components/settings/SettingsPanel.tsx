@@ -24,6 +24,7 @@ interface SettingsPanelProps {
   tags: Tag[];
   activityCreationMode: ActivityCreationMode;
   allowReopenCompleted: boolean;
+  autosaveEnabled: boolean;
   appearance: AppearanceSettings;
   onAddField: (field: Omit<CustomField, 'id' | 'order'>) => void;
   onUpdateField: (id: string, updates: Partial<CustomField>) => void;
@@ -31,7 +32,7 @@ interface SettingsPanelProps {
   onAddTag: (tag: Omit<Tag, 'id'>) => void;
   onUpdateTag: (id: string, updates: Partial<Tag>) => void;
   onDeleteTag: (id: string) => void;
-  onUpdateGeneralSettings: (updates: { activityCreationMode?: ActivityCreationMode; allowReopenCompleted?: boolean }) => void;
+  onUpdateGeneralSettings: (updates: { activityCreationMode?: ActivityCreationMode; allowReopenCompleted?: boolean; autosaveEnabled?: boolean }) => void;
   onUpdateAppearance: (updates: Partial<AppearanceSettings>) => void;
 }
 
@@ -66,6 +67,7 @@ export function SettingsPanel({
   tags,
   activityCreationMode,
   allowReopenCompleted,
+  autosaveEnabled,
   appearance,
   onAddField,
   onUpdateField,
@@ -163,6 +165,21 @@ export function SettingsPanel({
                 <Switch
                   checked={allowReopenCompleted}
                   onCheckedChange={(checked) => onUpdateGeneralSettings({ allowReopenCompleted: checked })}
+                />
+              </div>
+
+              <div className="flex items-center justify-between py-2 border-t pt-4">
+                <div>
+                  <Label className="font-medium">Salvamento automático</Label>
+                  <p className="text-sm text-muted-foreground">
+                    {autosaveEnabled 
+                      ? 'As notas são salvas automaticamente' 
+                      : 'Salvar manualmente com Ctrl+S'}
+                  </p>
+                </div>
+                <Switch
+                  checked={autosaveEnabled}
+                  onCheckedChange={(checked) => onUpdateGeneralSettings({ autosaveEnabled: checked })}
                 />
               </div>
             </div>

@@ -32,6 +32,7 @@ interface UserSettingsRow {
   allow_reopen_completed: boolean;
   default_sort: string;
   activity_creation_mode: string;
+  autosave_enabled: boolean;
 }
 
 const defaultSettings: AppSettings = {
@@ -40,6 +41,7 @@ const defaultSettings: AppSettings = {
   allowReopenCompleted: true,
   defaultSort: 'manual',
   activityCreationMode: 'simple',
+  autosaveEnabled: true,
 };
 
 export function useSettings() {
@@ -50,10 +52,12 @@ export function useSettings() {
     allowReopenCompleted: boolean;
     defaultSort: SortOption;
     activityCreationMode: ActivityCreationMode;
+    autosaveEnabled: boolean;
   }>({
     allowReopenCompleted: true,
     defaultSort: 'manual',
     activityCreationMode: 'simple',
+    autosaveEnabled: true,
   });
   const [isLoading, setIsLoading] = useState(true);
 
@@ -66,6 +70,7 @@ export function useSettings() {
         allowReopenCompleted: true,
         defaultSort: 'manual',
         activityCreationMode: 'simple',
+        autosaveEnabled: true,
       });
       setIsLoading(false);
       return;
@@ -124,6 +129,7 @@ export function useSettings() {
             allowReopenCompleted: settingsData.allow_reopen_completed,
             defaultSort: settingsData.default_sort as SortOption,
             activityCreationMode: settingsData.activity_creation_mode as ActivityCreationMode,
+            autosaveEnabled: settingsData.autosave_enabled ?? true,
           });
         }
       } catch (error) {
@@ -143,6 +149,7 @@ export function useSettings() {
     allowReopenCompleted: generalSettings.allowReopenCompleted,
     defaultSort: generalSettings.defaultSort,
     activityCreationMode: generalSettings.activityCreationMode,
+    autosaveEnabled: generalSettings.autosaveEnabled,
   }), [customFields, tags, generalSettings]);
 
   // Tag operations
@@ -355,7 +362,7 @@ export function useSettings() {
   }, [user, customFields]);
 
   // General settings operations
-  const updateGeneralSettings = useCallback(async (updates: Partial<Pick<AppSettings, 'allowReopenCompleted' | 'defaultSort' | 'activityCreationMode'>>) => {
+  const updateGeneralSettings = useCallback(async (updates: Partial<Pick<AppSettings, 'allowReopenCompleted' | 'defaultSort' | 'activityCreationMode' | 'autosaveEnabled'>>) => {
     if (!user) return;
 
     // Update local state (optimistic)
@@ -367,6 +374,7 @@ export function useSettings() {
       if (updates.allowReopenCompleted !== undefined) dbUpdates.allow_reopen_completed = updates.allowReopenCompleted;
       if (updates.defaultSort !== undefined) dbUpdates.default_sort = updates.defaultSort;
       if (updates.activityCreationMode !== undefined) dbUpdates.activity_creation_mode = updates.activityCreationMode;
+      if (updates.autosaveEnabled !== undefined) dbUpdates.autosave_enabled = updates.autosaveEnabled;
 
       const { error } = await supabase
         .from('user_settings' as never)

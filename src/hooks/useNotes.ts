@@ -31,11 +31,12 @@ interface NoteLineRow {
   sort_order: number;
 }
 
-export function useNotes() {
+export function useNotes(autosaveEnabled: boolean = true) {
   const { user, isAuthenticated } = useAuthContext();
   const [notes, setNotes] = useState<DailyNote[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const pendingSavesRef = useRef<Map<string, DailyNote>>(new Map());
   
@@ -240,6 +241,13 @@ export function useNotes() {
 
     // Add to pending saves
     pendingSavesRef.current.set(note.date, note);
+    setHasUnsavedChanges(true);
+
+    // If autosave is disabled, just mark as having unsaved changes
+    if (!autosaveEnabled) {
+      setSaveStatus('idle');
+      return;
+    }
 
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current);
@@ -255,8 +263,9 @@ export function useNotes() {
       for (const noteToSave of pendingSaves) {
         await persistNote(noteToSave);
       }
+      setHasUnsavedChanges(false);
     }, 1000);
-  }, [user, persistNote]);
+  }, [user, persistNote, autosaveEnabled]);
 
   const getNote = useCallback((date: Date): DailyNote => {
     const dateKey = format(date, 'yyyy-MM-dd');
@@ -433,6 +442,37 @@ export function useNotes() {
       .reverse();
   }, [notes]);
 
+  // Manual save function
+  const saveAllPending = useCallback(async () => {
+    if (!user) return;
+
+    const pendingSaves = Array.from(pendingSavesRef.current.values());
+    if (pendingSaves.length === 0 && !hasUnsavedChanges) return;
+
+    // Also include current notes that may not be in pending
+    const notesToSave = pendingSaves.length > 0 ? pendingSaves : notes.filter(n => n.lines.some(l => l.content.trim() !== ''));
+    
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+    }
+
+    setSaveStatus('saving');
+    pendingSavesRef.current.clear();
+
+    for (const noteToSave of notesToSave) {
+      await persistNote(noteToSave);
+    }
+    
+    setHasUnsavedChanges(false);
+  }, [user, persistNote, notes, hasUnsavedChanges]);
+
+  // Discard all pending changes
+  const discardChanges = useCallback(() => {
+    pendingSavesRef.current.clear();
+    setHasUnsavedChanges(false);
+    setSaveStatus('idle');
+  }, []);
+
   return {
     notes,
     isLoading,
@@ -446,6 +486,9 @@ export function useNotes() {
     searchNotes,
     allDatesWithNotes,
     saveStatus,
+    hasUnsavedChanges,
+    saveAllPending,
+    discardChanges,
     undo,
     redo,
     canUndo,

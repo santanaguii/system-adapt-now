@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useActivities } from '@/hooks/useActivities';
 import { useNotes } from '@/hooks/useNotes';
 import { useSettings } from '@/hooks/useSettings';
@@ -8,6 +8,7 @@ import { ActivityList } from '@/components/activities/ActivityList';
 import { NoteEditor } from '@/components/notes/NoteEditor';
 import { NotesSidebar } from '@/components/notes/NotesSidebar';
 import { SettingsPanel } from '@/components/settings/SettingsPanel';
+import { UnsavedChangesDialog } from '@/components/UnsavedChangesDialog';
 import { Button } from '@/components/ui/button';
 import { LineType, SortOption } from '@/types';
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@/components/ui/resizable';
@@ -50,11 +51,74 @@ const Index = () => {
     searchNotes,
     allDatesWithNotes,
     saveStatus,
+    hasUnsavedChanges,
+    saveAllPending,
+    discardChanges,
     undo,
     redo,
     canUndo,
     canRedo,
-  } = useNotes();
+  } = useNotes(settings.autosaveEnabled);
+
+  const [showUnsavedDialog, setShowUnsavedDialog] = useState(false);
+  const [pendingDateChange, setPendingDateChange] = useState<Date | null>(null);
+
+  // Handle date change with unsaved changes check
+  const handleDateChange = useCallback((newDate: Date) => {
+    if (hasUnsavedChanges && !settings.autosaveEnabled) {
+      setPendingDateChange(newDate);
+      setShowUnsavedDialog(true);
+    } else {
+      setCurrentDate(newDate);
+    }
+  }, [hasUnsavedChanges, settings.autosaveEnabled]);
+
+  const handleSaveAndContinue = useCallback(async () => {
+    await saveAllPending();
+    if (pendingDateChange) {
+      setCurrentDate(pendingDateChange);
+      setPendingDateChange(null);
+    }
+    setShowUnsavedDialog(false);
+  }, [saveAllPending, pendingDateChange]);
+
+  const handleDiscardAndContinue = useCallback(() => {
+    discardChanges();
+    if (pendingDateChange) {
+      setCurrentDate(pendingDateChange);
+      setPendingDateChange(null);
+    }
+    setShowUnsavedDialog(false);
+  }, [discardChanges, pendingDateChange]);
+
+  const handleCancelNavigation = useCallback(() => {
+    setPendingDateChange(null);
+    setShowUnsavedDialog(false);
+  }, []);
+
+  // Ctrl+S global handler for manual save
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault();
+        saveAllPending();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [saveAllPending]);
+
+  // Warn before leaving page with unsaved changes
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (hasUnsavedChanges && !settings.autosaveEnabled) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [hasUnsavedChanges, settings.autosaveEnabled]);
 
   const currentNote = getNote(currentDate);
 
@@ -115,7 +179,7 @@ const Index = () => {
             <NotesSidebar
               dates={allDatesWithNotes}
               currentDate={currentDate}
-              onSelectDate={setCurrentDate}
+              onSelectDate={handleDateChange}
               onSearch={searchNotes}
             />
           </ResizablePanel>
@@ -127,7 +191,7 @@ const Index = () => {
             <NoteEditor
               currentDate={currentDate}
               note={currentNote}
-              onDateChange={setCurrentDate}
+              onDateChange={handleDateChange}
               onUpdateLine={handleUpdateLine}
               onAddLine={handleAddLine}
               onDeleteLine={handleDeleteLine}
@@ -136,6 +200,9 @@ const Index = () => {
               onSearch={searchNotes}
               allDatesWithNotes={allDatesWithNotes}
               saveStatus={saveStatus}
+              hasUnsavedChanges={hasUnsavedChanges}
+              autosaveEnabled={settings.autosaveEnabled}
+              onSave={saveAllPending}
               onUndo={undo}
               onRedo={redo}
               canUndo={canUndo}
@@ -174,6 +241,7 @@ const Index = () => {
         tags={settings.tags}
         activityCreationMode={settings.activityCreationMode}
         allowReopenCompleted={settings.allowReopenCompleted}
+        autosaveEnabled={settings.autosaveEnabled}
         appearance={appearance}
         onAddField={addCustomField}
         onUpdateField={updateCustomField}
@@ -183,6 +251,14 @@ const Index = () => {
         onDeleteTag={deleteTag}
         onUpdateGeneralSettings={updateGeneralSettings}
         onUpdateAppearance={updateAppearance}
+      />
+
+      {/* Unsaved Changes Dialog */}
+      <UnsavedChangesDialog
+        isOpen={showUnsavedDialog}
+        onSave={handleSaveAndContinue}
+        onDiscard={handleDiscardAndContinue}
+        onCancel={handleCancelNavigation}
       />
     </div>
   );

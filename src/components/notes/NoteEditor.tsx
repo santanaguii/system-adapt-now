@@ -8,7 +8,7 @@ import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { CalendarIcon, ChevronLeft, ChevronRight, Undo2, Redo2, Loader2, Check, AlertCircle } from 'lucide-react';
+import { CalendarIcon, ChevronLeft, ChevronRight, Undo2, Redo2, Loader2, Check, AlertCircle, Save } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { SaveStatus } from '@/hooks/useNotes';
 interface NoteEditorProps {
@@ -23,6 +23,9 @@ interface NoteEditorProps {
   onSearch: (query: string) => DailyNote[];
   allDatesWithNotes: string[];
   saveStatus: SaveStatus;
+  hasUnsavedChanges: boolean;
+  autosaveEnabled: boolean;
+  onSave: () => void;
   onUndo: () => void;
   onRedo: () => void;
   canUndo: boolean;
@@ -40,6 +43,9 @@ export function NoteEditor({
   onSearch,
   allDatesWithNotes,
   saveStatus,
+  hasUnsavedChanges,
+  autosaveEnabled,
+  onSave,
   onUndo,
   onRedo,
   canUndo,
@@ -188,6 +194,37 @@ export function NoteEditor({
   }, [note.lines, visibleLines, onAddLine, onDeleteLine, onUpdateLine, onUpdateIndent]);
   const isToday = format(currentDate, 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd');
   const renderSaveStatus = () => {
+    if (!autosaveEnabled) {
+      if (saveStatus === 'saving') {
+        return <span className="flex items-center gap-1 text-muted-foreground">
+            <Loader2 className="h-3 w-3 animate-spin" />
+            Salvando...
+          </span>;
+      }
+      if (saveStatus === 'saved') {
+        return <span className="flex items-center gap-1 text-green-600">
+            <Check className="h-3 w-3" />
+            Salvo
+          </span>;
+      }
+      if (saveStatus === 'error') {
+        return <span className="flex items-center gap-1 text-destructive">
+            <AlertCircle className="h-3 w-3" />
+            Erro ao salvar
+          </span>;
+      }
+      if (hasUnsavedChanges) {
+        return <span className="flex items-center gap-2">
+            <span className="text-amber-600 dark:text-amber-400">● Alterações não salvas</span>
+            <Button variant="outline" size="sm" className="h-6 text-xs" onClick={onSave}>
+              <Save className="h-3 w-3 mr-1" />
+              Salvar (Ctrl+S)
+            </Button>
+          </span>;
+      }
+      return <span className="text-muted-foreground">Salvamento manual</span>;
+    }
+
     switch (saveStatus) {
       case 'saving':
         return <span className="flex items-center gap-1 text-muted-foreground">

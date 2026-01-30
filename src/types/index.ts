@@ -94,4 +94,5 @@ export interface AppSettings {
   allowReopenCompleted: boolean;
   defaultSort: SortOption;
   activityCreationMode: ActivityCreationMode;
+  autosaveEnabled: boolean;
 }
