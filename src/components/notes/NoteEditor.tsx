@@ -283,12 +283,19 @@ export function NoteEditor({
           <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onRedo} disabled={!canRedo} title="Refazer (Ctrl+Y)">
             <Redo2 className="h-4 w-4" />
           </Button>
-          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setShowNotesList(!showNotesList)} title="Lista de notas">
-            
-          </Button>
-          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setIsSearching(!isSearching)}>
-            
-          </Button>
+          {!autosaveEnabled && (
+            <Button 
+              variant={hasUnsavedChanges ? "default" : "ghost"} 
+              size="sm" 
+              className="h-8 px-3" 
+              onClick={onSave}
+              disabled={!hasUnsavedChanges}
+              title="Salvar (Ctrl+S)"
+            >
+              <Save className="h-4 w-4 mr-1" />
+              Salvar
+            </Button>
+          )}
         </div>
       </div>
 
