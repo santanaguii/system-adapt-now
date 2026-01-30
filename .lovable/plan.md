@@ -1,136 +1,125 @@
 
 
-# Plano: Correção Definitiva do Loading Infinito
+# Plano: Adicionar Configurações de Aparência
 
-## Diagnóstico Atual
+## Visão Geral
 
-O log mostra:
-```
-Auth initialization failed: Auth timeout
-```
+Vou adicionar uma nova aba "Aparência" nas configurações do sistema onde você poderá personalizar:
 
-Isso significa que:
-1. O timeout de 10s está sendo atingido (a conexão com Supabase está travando)
-2. O bloco `catch` é executado
-3. MAS a chamada `supabase.auth.signOut()` dentro do `catch` também pode estar travando
-4. O `finally` só executa APÓS o `catch` terminar completamente
+- **Tipo de fonte** - Escolher entre diferentes famílias tipográficas
+- **Tamanho de fonte** - Ajustar a escala do texto (pequeno, médio, grande)
+- **Palheta de cores** - Escolher entre temas de cores predefinidos (âmbar, azul, verde, roxo, rosa)
+- **Modo escuro/claro** - Alternar entre light/dark mode
 
-## Causa Raiz
+---
 
-A sessão corrompida no localStorage está fazendo com que:
-- `getSession()` trave indefinidamente → timeout de 10s dispara
-- `signOut()` no catch TAMBÉM pode travar tentando comunicar com Supabase
-- O `finally` não executa até que `signOut()` termine
+## Componentes Visuais
 
-## Solução em Duas Partes
+### Nova Aba de Aparência
 
-### Parte 1: Limpar localStorage ANTES de tentar qualquer operação do Supabase
+A aba terá 4 seções:
 
-Se há dados corrompidos, devemos limpá-los **imediatamente** quando detectamos problemas, sem depender do Supabase.
+| Configuração | Opções |
+|--------------|--------|
+| **Família de Fonte** | Inter (padrão), System UI, Roboto, Open Sans, Poppins |
+| **Tamanho de Fonte** | Pequeno (14px), Médio (16px), Grande (18px) |
+| **Tema de Cores** | Âmbar (atual), Azul, Verde, Roxo, Rosa |
+| **Modo** | Claro, Escuro, Sistema |
 
-### Parte 2: Adicionar timeout ao signOut também
+### Preview em Tempo Real
 
-O `signOut()` não deve travar o sistema.
+As alterações serão aplicadas instantaneamente para você visualizar antes de salvar.
 
-## Código Proposto
+---
+
+## Detalhes Técnicos
+
+### 1. Atualizar Tipos (`src/types/index.ts`)
+
+Adicionar novos tipos para as configurações de aparência:
 
 ```typescript
-// Initialize auth state
-useEffect(() => {
-  let isMounted = true;
+export type FontFamily = 'inter' | 'system' | 'roboto' | 'opensans' | 'poppins';
+export type FontSize = 'small' | 'medium' | 'large';
+export type ColorTheme = 'amber' | 'blue' | 'green' | 'purple' | 'pink';
+export type ThemeMode = 'light' | 'dark' | 'system';
 
-  const initializeAuth = async () => {
-    try {
-      // Timeout de segurança - 10 segundos máximo
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Auth timeout')), 10000)
-      );
-      
-      const sessionPromise = supabase.auth.getSession();
-      
-      const { data: { session }, error } = await Promise.race([
-        sessionPromise,
-        timeoutPromise
-      ]) as Awaited<ReturnType<typeof supabase.auth.getSession>>;
-      
-      if (error) {
-        console.error('Session error, clearing auth:', error);
-        // Limpar localStorage diretamente para evitar travamento
-        Object.keys(localStorage).forEach(key => {
-          if (key.startsWith('sb-')) {
-            localStorage.removeItem(key);
-          }
-        });
-        if (isMounted) setUser(null);
-        return;
-      }
-
-      if (session?.user && isMounted) {
-        const profile = await loadUserProfile(session.user);
-        if (isMounted) setUser(profile);
-      }
-    } catch (error) {
-      console.error('Auth initialization failed:', error);
-      // Limpar localStorage diretamente (mais seguro que signOut que pode travar)
-      Object.keys(localStorage).forEach(key => {
-        if (key.startsWith('sb-')) {
-          localStorage.removeItem(key);
-        }
-      });
-      if (isMounted) setUser(null);
-    } finally {
-      if (isMounted) setIsLoading(false);
-    }
-  };
-
-  // Set up auth state listener for ONGOING changes
-  const { data: { subscription } } = supabase.auth.onAuthStateChange(
-    async (event, session) => {
-      if (!isMounted) return;
-      
-      if (session?.user) {
-        const profile = await loadUserProfile(session.user);
-        if (isMounted) setUser(profile);
-      } else {
-        setUser(null);
-      }
-    }
-  );
-
-  initializeAuth();
-
-  return () => {
-    isMounted = false;
-    subscription.unsubscribe();
-  };
-}, [loadUserProfile]);
+export interface AppearanceSettings {
+  fontFamily: FontFamily;
+  fontSize: FontSize;
+  colorTheme: ColorTheme;
+  themeMode: ThemeMode;
+}
 ```
 
-## Mudança Principal
+### 2. Configurar ThemeProvider (`src/App.tsx`)
 
-| Antes | Depois |
-|-------|--------|
-| `await supabase.auth.signOut()` (pode travar) | Limpeza direta do localStorage com `Object.keys(localStorage).forEach(key => { if (key.startsWith('sb-')) localStorage.removeItem(key); })` |
+Integrar `next-themes` (já instalado) para gerenciar light/dark mode:
 
-## Por que isso funciona
+```typescript
+import { ThemeProvider } from 'next-themes';
 
-1. **Não depende do Supabase**: Ao invés de chamar `signOut()` que pode travar, limpamos diretamente as chaves do Supabase no localStorage
-2. **Execução garantida**: `localStorage.removeItem()` é síncrono e nunca trava
-3. **Específico**: Só remove chaves que começam com `sb-` (convenção do Supabase)
-4. **finally executa**: Como não há mais operações async que podem travar, o `finally` sempre executa
-
-## Arquivos a Modificar
-
-| Arquivo | Alteração |
-|---------|-----------|
-| `src/hooks/useAuth.ts` | Substituir `signOut()` por limpeza direta do localStorage |
-
-## Ação Imediata para o Usuário
-
-Enquanto isso, você pode resolver agora abrindo o console (F12) e executando:
-
-```javascript
-Object.keys(localStorage).forEach(key => { if (key.startsWith('sb-')) localStorage.removeItem(key); });
-location.reload();
+// Envolver o App com ThemeProvider
+<ThemeProvider attribute="class" defaultTheme="system">
+  ...
+</ThemeProvider>
 ```
+
+### 3. Criar Hook de Aparência (`src/hooks/useAppearance.ts`)
+
+Novo hook para gerenciar configurações de aparência:
+
+- Carregar/salvar no Supabase (tabela `user_settings`)
+- Aplicar CSS custom properties dinamicamente
+- Sincronizar com `next-themes` para dark mode
+
+### 4. Atualizar CSS (`src/index.css`)
+
+Adicionar variáveis para:
+- Múltiplas palhetas de cores (blue, green, purple, pink)
+- Classes de tamanho de fonte
+- Importar fontes adicionais do Google Fonts
+
+### 5. Atualizar SettingsPanel (`src/components/settings/SettingsPanel.tsx`)
+
+Adicionar nova aba "Aparência" com:
+- Seletor de fonte com preview
+- Slider ou botões para tamanho de fonte
+- Paleta de cores com preview colorido
+- Toggle para modo claro/escuro/sistema
+
+### 6. Migração do Banco de Dados
+
+Adicionar colunas na tabela `user_settings`:
+- `font_family` (text, default 'inter')
+- `font_size` (text, default 'medium')
+- `color_theme` (text, default 'amber')
+- `theme_mode` (text, default 'system')
+
+---
+
+## Arquivos a Modificar/Criar
+
+| Arquivo | Ação |
+|---------|------|
+| `src/types/index.ts` | Adicionar tipos de aparência |
+| `src/App.tsx` | Envolver com ThemeProvider + AppearanceProvider |
+| `src/hooks/useAppearance.ts` | **Criar** - Hook para gerenciar aparência |
+| `src/index.css` | Adicionar palhetas de cores e fontes |
+| `src/components/settings/SettingsPanel.tsx` | Adicionar aba "Aparência" |
+| `src/hooks/useSettings.ts` | Integrar configurações de aparência |
+| **Migração SQL** | Adicionar colunas em `user_settings` |
+
+---
+
+## Resultado Esperado
+
+Após a implementação, você terá uma nova aba "Aparência" nas configurações com controles visuais para personalizar:
+
+- A fonte usada em todo o sistema
+- O tamanho do texto
+- As cores principais (botões, links, destaques)
+- Alternar entre modo claro e escuro
+
+As preferências serão salvas no banco de dados e aplicadas automaticamente ao fazer login.
 
