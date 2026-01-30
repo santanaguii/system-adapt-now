@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { CustomField, Tag, FieldType, ActivityCreationMode } from '@/types';
+import { CustomField, Tag, FieldType, ActivityCreationMode, AppearanceSettings } from '@/types';
 import {
   Dialog,
   DialogContent,
@@ -15,6 +15,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Plus, Trash2, GripVertical } from 'lucide-react';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { AppearanceSettingsTab } from './AppearanceSettings';
 
 interface SettingsPanelProps {
   isOpen: boolean;
@@ -23,6 +24,7 @@ interface SettingsPanelProps {
   tags: Tag[];
   activityCreationMode: ActivityCreationMode;
   allowReopenCompleted: boolean;
+  appearance: AppearanceSettings;
   onAddField: (field: Omit<CustomField, 'id' | 'order'>) => void;
   onUpdateField: (id: string, updates: Partial<CustomField>) => void;
   onDeleteField: (id: string) => void;
@@ -30,6 +32,7 @@ interface SettingsPanelProps {
   onUpdateTag: (id: string, updates: Partial<Tag>) => void;
   onDeleteTag: (id: string) => void;
   onUpdateGeneralSettings: (updates: { activityCreationMode?: ActivityCreationMode; allowReopenCompleted?: boolean }) => void;
+  onUpdateAppearance: (updates: Partial<AppearanceSettings>) => void;
 }
 
 const fieldTypes: { value: FieldType; label: string }[] = [
@@ -63,6 +66,7 @@ export function SettingsPanel({
   tags,
   activityCreationMode,
   allowReopenCompleted,
+  appearance,
   onAddField,
   onUpdateField,
   onDeleteField,
@@ -70,6 +74,7 @@ export function SettingsPanel({
   onUpdateTag,
   onDeleteTag,
   onUpdateGeneralSettings,
+  onUpdateAppearance,
 }: SettingsPanelProps) {
   const [newFieldName, setNewFieldName] = useState('');
   const [newFieldType, setNewFieldType] = useState<FieldType>('text');
@@ -117,8 +122,9 @@ export function SettingsPanel({
         </DialogHeader>
 
         <Tabs defaultValue="general" className="mt-4">
-          <TabsList className="grid w-full grid-cols-3">
+          <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="general">Geral</TabsTrigger>
+            <TabsTrigger value="appearance">Aparência</TabsTrigger>
             <TabsTrigger value="fields">Campos</TabsTrigger>
             <TabsTrigger value="tags">Tags</TabsTrigger>
           </TabsList>
@@ -160,6 +166,10 @@ export function SettingsPanel({
                 />
               </div>
             </div>
+          </TabsContent>
+
+          <TabsContent value="appearance" className="mt-4">
+            <AppearanceSettingsTab appearance={appearance} onUpdate={onUpdateAppearance} />
           </TabsContent>
 
           <TabsContent value="fields" className="space-y-4 mt-4">

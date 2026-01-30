@@ -3,6 +3,7 @@ import { useActivities } from '@/hooks/useActivities';
 import { useNotes } from '@/hooks/useNotes';
 import { useSettings } from '@/hooks/useSettings';
 import { useAuthContext } from '@/contexts/AuthContext';
+import { useAppearanceContext } from '@/contexts/AppearanceContext';
 import { ActivityList } from '@/components/activities/ActivityList';
 import { NoteEditor } from '@/components/notes/NoteEditor';
 import { NotesSidebar } from '@/components/notes/NotesSidebar';
@@ -14,6 +15,7 @@ import { LogOut, User } from 'lucide-react';
 
 const Index = () => {
   const { user, signOut } = useAuthContext();
+  const { appearance, updateAppearance } = useAppearanceContext();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [sortOption, setSortOption] = useState<SortOption>('manual');
@@ -172,6 +174,7 @@ const Index = () => {
         tags={settings.tags}
         activityCreationMode={settings.activityCreationMode}
         allowReopenCompleted={settings.allowReopenCompleted}
+        appearance={appearance}
         onAddField={addCustomField}
         onUpdateField={updateCustomField}
         onDeleteField={deleteCustomField}
@@ -179,6 +182,7 @@ const Index = () => {
         onUpdateTag={updateTag}
         onDeleteTag={deleteTag}
         onUpdateGeneralSettings={updateGeneralSettings}
+        onUpdateAppearance={updateAppearance}
       />
     </div>
   );

@@ -75,6 +75,19 @@ export type SortOption = 'manual' | 'dueDate_asc' | 'dueDate_desc' | 'priority_a
 
 export type ActivityCreationMode = 'simple' | 'detailed';
 
+// Appearance settings types
+export type FontFamily = 'inter' | 'system' | 'roboto' | 'opensans' | 'poppins';
+export type FontSize = 'small' | 'medium' | 'large';
+export type ColorTheme = 'amber' | 'blue' | 'green' | 'purple' | 'pink';
+export type ThemeMode = 'light' | 'dark' | 'system';
+
+export interface AppearanceSettings {
+  fontFamily: FontFamily;
+  fontSize: FontSize;
+  colorTheme: ColorTheme;
+  themeMode: ThemeMode;
+}
+
 export interface AppSettings {
   customFields: CustomField[];
   tags: Tag[];
