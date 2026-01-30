@@ -190,16 +190,35 @@ export function useAuth() {
     };
 
     // Set up auth state listener for ONGOING changes
+    // IMPORTANT: Callback must be synchronous to avoid Supabase deadlock
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
+      (event, session) => {
         if (!isMounted) return;
         
-        if (session?.user) {
-          const profile = await loadUserProfile(session.user);
-          if (isMounted) setUser(profile);
-        } else {
+        // Atualização síncrona imediata para logout
+        if (!session?.user) {
           setUser(null);
+          setIsLoading(false);
+          return;
         }
+        
+        // Defer chamadas ao Supabase com setTimeout para evitar deadlock
+        setTimeout(async () => {
+          if (!isMounted) return;
+          try {
+            const profile = await loadUserProfile(session.user);
+            if (isMounted) {
+              setUser(profile);
+              setIsLoading(false);
+            }
+          } catch (error) {
+            console.error('Error loading profile:', error);
+            if (isMounted) {
+              setUser(null);
+              setIsLoading(false);
+            }
+          }
+        }, 0);
       }
     );
 
