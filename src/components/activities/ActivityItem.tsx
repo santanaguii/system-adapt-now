@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Activity, Tag, CustomField } from '@/types';
+import { Activity, Tag, CustomField, ActivityListDisplaySettings } from '@/types';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Button } from '@/components/ui/button';
 import { GripVertical, X, ChevronRight, Calendar, Flag } from 'lucide-react';
@@ -11,6 +11,7 @@ interface ActivityItemProps {
   activity: Activity;
   tags: Tag[];
   customFields: CustomField[];
+  listDisplay: ActivityListDisplaySettings;
   onToggleComplete: (id: string) => void;
   onUpdate: (id: string, updates: Partial<Activity>) => void;
   onDelete: (id: string) => void;
@@ -29,6 +30,7 @@ export function ActivityItem({
   activity,
   tags,
   customFields,
+  listDisplay,
   onToggleComplete,
   onUpdate,
   onDelete,
@@ -93,6 +95,11 @@ export function ActivityItem({
   const dueDate = activity.customFields.dueDate as string | null;
   const priority = activity.customFields.priority as string | null;
 
+  // Filter visible fields based on listDisplay settings
+  const visibleFields = customFields.filter(field => 
+    listDisplay.visibleFieldIds?.includes(field.id)
+  );
+
   return (
     <div
       className={cn(
@@ -134,7 +141,7 @@ export function ActivityItem({
               <span className={cn('truncate', activity.completed && 'line-through')}>
                 {activity.title}
               </span>
-              {activityTags.length > 0 && (
+              {listDisplay.showTags && activityTags.length > 0 && (
                 <div className="flex gap-1">
                   {activityTags.map((tag) => (
                     <span
@@ -148,20 +155,39 @@ export function ActivityItem({
                 </div>
               )}
             </div>
-            {(dueDate || priority) && (
-              <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                {dueDate && (
+            {((listDisplay.showDueDate && dueDate) || (listDisplay.showPriority && priority) || visibleFields.length > 0) && (
+              <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
+                {listDisplay.showDueDate && dueDate && (
                   <span className="flex items-center gap-1">
                     <Calendar className="h-3 w-3" />
                     {format(new Date(dueDate), 'd MMM', { locale: ptBR })}
                   </span>
                 )}
-                {priority && (
+                {listDisplay.showPriority && priority && (
                   <span className={cn('flex items-center gap-1', priorityColors[priority])}>
                     <Flag className="h-3 w-3" />
                     {priority}
                   </span>
                 )}
+                {visibleFields.map(field => {
+                  const value = activity.customFields[field.id];
+                  if (value === null || value === undefined || value === '') return null;
+                  
+                  let displayValue = String(value);
+                  if (field.type === 'date' && typeof value === 'string') {
+                    displayValue = format(new Date(value), 'd MMM', { locale: ptBR });
+                  } else if (field.type === 'boolean') {
+                    displayValue = value ? 'Sim' : 'Não';
+                  } else if (field.type === 'currency' && typeof value === 'number') {
+                    displayValue = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
+                  }
+                  
+                  return (
+                    <span key={field.id} className="flex items-center gap-1">
+                      <span className="font-medium">{field.name}:</span> {displayValue}
+                    </span>
+                  );
+                })}
               </div>
             )}
           </div>

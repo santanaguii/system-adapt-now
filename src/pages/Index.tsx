@@ -30,6 +30,9 @@ const Index = () => {
     updateTag,
     deleteTag,
     updateGeneralSettings,
+    updateListDisplay,
+    updateSavedFilters,
+    updateSavedSort,
   } = useSettings();
 
   const {
@@ -218,6 +221,8 @@ const Index = () => {
               activities={sortedActivities}
               tags={settings.tags}
               customFields={settings.customFields}
+              listDisplay={settings.listDisplay}
+              savedFilters={settings.savedFilters}
               onAdd={addActivity}
               onUpdate={updateActivity}
               onDelete={deleteActivity}
@@ -243,6 +248,9 @@ const Index = () => {
         allowReopenCompleted={settings.allowReopenCompleted}
         autosaveEnabled={settings.autosaveEnabled}
         appearance={appearance}
+        listDisplay={settings.listDisplay}
+        savedFilters={settings.savedFilters}
+        savedSort={settings.savedSort}
         onAddField={addCustomField}
         onUpdateField={updateCustomField}
         onDeleteField={deleteCustomField}
@@ -251,6 +259,9 @@ const Index = () => {
         onDeleteTag={deleteTag}
         onUpdateGeneralSettings={updateGeneralSettings}
         onUpdateAppearance={updateAppearance}
+        onUpdateListDisplay={updateListDisplay}
+        onUpdateFilters={updateSavedFilters}
+        onUpdateSort={updateSavedSort}
       />
 
       {/* Unsaved Changes Dialog */}

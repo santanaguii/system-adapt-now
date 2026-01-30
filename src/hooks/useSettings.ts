@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { AppSettings, CustomField, Tag, SortOption, ActivityCreationMode } from '@/types';
+import { AppSettings, CustomField, Tag, SortOption, ActivityCreationMode, ActivityListDisplaySettings, FilterConfig, SortConfig } from '@/types';
 import { useAuthContext } from '@/contexts/AuthContext';
 
 // Type definitions for external Supabase tables
@@ -33,7 +33,22 @@ interface UserSettingsRow {
   default_sort: string;
   activity_creation_mode: string;
   autosave_enabled: boolean;
+  list_display?: ActivityListDisplaySettings;
+  saved_filters?: FilterConfig[];
+  saved_sort?: SortConfig;
 }
+
+const defaultListDisplay: ActivityListDisplaySettings = {
+  showTags: true,
+  showDueDate: true,
+  showPriority: true,
+  visibleFieldIds: [],
+};
+
+const defaultSortConfig: SortConfig = {
+  type: 'manual',
+  direction: 'asc',
+};
 
 const defaultSettings: AppSettings = {
   customFields: [],
@@ -42,6 +57,9 @@ const defaultSettings: AppSettings = {
   defaultSort: 'manual',
   activityCreationMode: 'simple',
   autosaveEnabled: true,
+  listDisplay: defaultListDisplay,
+  savedFilters: [],
+  savedSort: defaultSortConfig,
 };
 
 export function useSettings() {
@@ -53,11 +71,17 @@ export function useSettings() {
     defaultSort: SortOption;
     activityCreationMode: ActivityCreationMode;
     autosaveEnabled: boolean;
+    listDisplay: ActivityListDisplaySettings;
+    savedFilters: FilterConfig[];
+    savedSort: SortConfig;
   }>({
     allowReopenCompleted: true,
     defaultSort: 'manual',
     activityCreationMode: 'simple',
     autosaveEnabled: true,
+    listDisplay: defaultListDisplay,
+    savedFilters: [],
+    savedSort: defaultSortConfig,
   });
   const [isLoading, setIsLoading] = useState(true);
 
@@ -71,6 +95,9 @@ export function useSettings() {
         defaultSort: 'manual',
         activityCreationMode: 'simple',
         autosaveEnabled: true,
+        listDisplay: defaultListDisplay,
+        savedFilters: [],
+        savedSort: defaultSortConfig,
       });
       setIsLoading(false);
       return;
@@ -130,6 +157,9 @@ export function useSettings() {
             defaultSort: settingsData.default_sort as SortOption,
             activityCreationMode: settingsData.activity_creation_mode as ActivityCreationMode,
             autosaveEnabled: settingsData.autosave_enabled ?? true,
+            listDisplay: settingsData.list_display ?? defaultListDisplay,
+            savedFilters: settingsData.saved_filters ?? [],
+            savedSort: settingsData.saved_sort ?? defaultSortConfig,
           });
         }
       } catch (error) {
@@ -150,6 +180,9 @@ export function useSettings() {
     defaultSort: generalSettings.defaultSort,
     activityCreationMode: generalSettings.activityCreationMode,
     autosaveEnabled: generalSettings.autosaveEnabled,
+    listDisplay: generalSettings.listDisplay,
+    savedFilters: generalSettings.savedFilters,
+    savedSort: generalSettings.savedSort,
   }), [customFields, tags, generalSettings]);
 
   // Tag operations
@@ -389,6 +422,73 @@ export function useSettings() {
     }
   }, [user]);
 
+  // List display settings operations
+  const updateListDisplay = useCallback(async (updates: Partial<ActivityListDisplaySettings>) => {
+    if (!user) return;
+
+    // Update local state (optimistic)
+    setGeneralSettings(prev => ({ 
+      ...prev, 
+      listDisplay: { ...prev.listDisplay, ...updates } 
+    }));
+
+    try {
+      const newListDisplay = { ...generalSettings.listDisplay, ...updates };
+      const { error } = await supabase
+        .from('user_settings' as never)
+        .update({ list_display: newListDisplay } as never)
+        .eq('user_id', user.id);
+
+      if (error) {
+        console.error('Error updating list display settings:', error);
+      }
+    } catch (error) {
+      console.error('Error updating list display settings:', error);
+    }
+  }, [user, generalSettings.listDisplay]);
+
+  // Saved filters operations
+  const updateSavedFilters = useCallback(async (filters: FilterConfig[]) => {
+    if (!user) return;
+
+    // Update local state (optimistic)
+    setGeneralSettings(prev => ({ ...prev, savedFilters: filters }));
+
+    try {
+      const { error } = await supabase
+        .from('user_settings' as never)
+        .update({ saved_filters: filters } as never)
+        .eq('user_id', user.id);
+
+      if (error) {
+        console.error('Error updating saved filters:', error);
+      }
+    } catch (error) {
+      console.error('Error updating saved filters:', error);
+    }
+  }, [user]);
+
+  // Saved sort operations
+  const updateSavedSort = useCallback(async (sort: SortConfig) => {
+    if (!user) return;
+
+    // Update local state (optimistic)
+    setGeneralSettings(prev => ({ ...prev, savedSort: sort }));
+
+    try {
+      const { error } = await supabase
+        .from('user_settings' as never)
+        .update({ saved_sort: sort } as never)
+        .eq('user_id', user.id);
+
+      if (error) {
+        console.error('Error updating saved sort:', error);
+      }
+    } catch (error) {
+      console.error('Error updating saved sort:', error);
+    }
+  }, [user]);
+
   return {
     settings,
     isLoading,
@@ -401,5 +501,8 @@ export function useSettings() {
     deleteTag,
     getTagById,
     updateGeneralSettings,
+    updateListDisplay,
+    updateSavedFilters,
+    updateSavedSort,
   };
 }
