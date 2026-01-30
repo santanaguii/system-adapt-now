@@ -71,7 +71,7 @@ export interface DailyNote {
   updatedAt: Date;
 }
 
-export type SortOption = 'manual' | 'dueDate_asc' | 'dueDate_desc' | 'priority_asc' | 'priority_desc' | 'createdAt_desc';
+export type SortOption = 'manual' | 'dueDate_asc' | 'dueDate_desc' | 'priority_asc' | 'priority_desc' | 'createdAt_desc' | 'tag' | 'field';
 
 export type ActivityCreationMode = 'simple' | 'detailed';
 
@@ -88,6 +88,32 @@ export interface AppearanceSettings {
   themeMode: ThemeMode;
 }
 
+// Activity list display settings
+export interface ActivityListDisplaySettings {
+  showTags: boolean;
+  showDueDate: boolean;
+  showPriority: boolean;
+  visibleFieldIds: string[]; // IDs of custom fields to show in list view
+}
+
+// Filter configuration
+export interface FilterConfig {
+  type: 'tag' | 'field';
+  fieldId?: string; // For field filters
+  tagId?: string; // For tag filters
+  operator: 'equals' | 'contains' | 'gt' | 'lt' | 'gte' | 'lte' | 'between' | 'isEmpty' | 'isNotEmpty';
+  value?: string | number | boolean | string[];
+  value2?: string | number; // For "between" operator
+}
+
+// Sort configuration
+export interface SortConfig {
+  type: 'manual' | 'createdAt' | 'tag' | 'field';
+  fieldId?: string; // For field sorting
+  tagId?: string; // For tag sorting
+  direction: 'asc' | 'desc';
+}
+
 export interface AppSettings {
   customFields: CustomField[];
   tags: Tag[];
@@ -95,4 +121,7 @@ export interface AppSettings {
   defaultSort: SortOption;
   activityCreationMode: ActivityCreationMode;
   autosaveEnabled: boolean;
+  listDisplay: ActivityListDisplaySettings;
+  savedFilters: FilterConfig[];
+  savedSort: SortConfig;
 }

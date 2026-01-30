@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { CustomField, Tag, FieldType, ActivityCreationMode, AppearanceSettings } from '@/types';
+import { CustomField, Tag, FieldType, ActivityCreationMode, AppearanceSettings, ActivityListDisplaySettings, FilterConfig, SortConfig } from '@/types';
 import {
   Dialog,
   DialogContent,
@@ -16,6 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Plus, Trash2, GripVertical } from 'lucide-react';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { AppearanceSettingsTab } from './AppearanceSettings';
+import { ListDisplaySettingsTab } from './ListDisplaySettings';
 
 interface SettingsPanelProps {
   isOpen: boolean;
@@ -26,6 +27,9 @@ interface SettingsPanelProps {
   allowReopenCompleted: boolean;
   autosaveEnabled: boolean;
   appearance: AppearanceSettings;
+  listDisplay: ActivityListDisplaySettings;
+  savedFilters: FilterConfig[];
+  savedSort: SortConfig;
   onAddField: (field: Omit<CustomField, 'id' | 'order'>) => void;
   onUpdateField: (id: string, updates: Partial<CustomField>) => void;
   onDeleteField: (id: string) => void;
@@ -34,6 +38,9 @@ interface SettingsPanelProps {
   onDeleteTag: (id: string) => void;
   onUpdateGeneralSettings: (updates: { activityCreationMode?: ActivityCreationMode; allowReopenCompleted?: boolean; autosaveEnabled?: boolean }) => void;
   onUpdateAppearance: (updates: Partial<AppearanceSettings>) => void;
+  onUpdateListDisplay: (updates: Partial<ActivityListDisplaySettings>) => void;
+  onUpdateFilters: (filters: FilterConfig[]) => void;
+  onUpdateSort: (sort: SortConfig) => void;
 }
 
 const fieldTypes: { value: FieldType; label: string }[] = [
@@ -69,6 +76,9 @@ export function SettingsPanel({
   allowReopenCompleted,
   autosaveEnabled,
   appearance,
+  listDisplay,
+  savedFilters,
+  savedSort,
   onAddField,
   onUpdateField,
   onDeleteField,
@@ -77,6 +87,9 @@ export function SettingsPanel({
   onDeleteTag,
   onUpdateGeneralSettings,
   onUpdateAppearance,
+  onUpdateListDisplay,
+  onUpdateFilters,
+  onUpdateSort,
 }: SettingsPanelProps) {
   const [newFieldName, setNewFieldName] = useState('');
   const [newFieldType, setNewFieldType] = useState<FieldType>('text');
@@ -124,8 +137,9 @@ export function SettingsPanel({
         </DialogHeader>
 
         <Tabs defaultValue="general" className="mt-4">
-          <TabsList className="grid w-full grid-cols-4">
+          <TabsList className="grid w-full grid-cols-5">
             <TabsTrigger value="general">Geral</TabsTrigger>
+            <TabsTrigger value="list">Lista</TabsTrigger>
             <TabsTrigger value="appearance">Aparência</TabsTrigger>
             <TabsTrigger value="fields">Campos</TabsTrigger>
             <TabsTrigger value="tags">Tags</TabsTrigger>
@@ -183,6 +197,19 @@ export function SettingsPanel({
                 />
               </div>
             </div>
+          </TabsContent>
+
+          <TabsContent value="list" className="mt-4">
+            <ListDisplaySettingsTab
+              customFields={customFields}
+              tags={tags}
+              listDisplay={listDisplay}
+              savedFilters={savedFilters}
+              savedSort={savedSort}
+              onUpdateListDisplay={onUpdateListDisplay}
+              onUpdateFilters={onUpdateFilters}
+              onUpdateSort={onUpdateSort}
+            />
           </TabsContent>
 
           <TabsContent value="appearance" className="mt-4">

@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { Activity, Tag, CustomField, SortOption, ActivityCreationMode } from '@/types';
+import { Activity, Tag, CustomField, SortOption, ActivityCreationMode, ActivityListDisplaySettings, FilterConfig } from '@/types';
 import { ActivityItem } from './ActivityItem';
 import { ActivityDetail } from './ActivityDetail';
 import { Input } from '@/components/ui/input';
@@ -61,6 +61,8 @@ interface ActivityListProps {
   activities: { active: Activity[]; completed: Activity[] };
   tags: Tag[];
   customFields: CustomField[];
+  listDisplay: ActivityListDisplaySettings;
+  savedFilters: FilterConfig[];
   onAdd: (title: string, tags?: string[]) => Promise<Activity | null> | Activity | null;
   onUpdate: (id: string, updates: Partial<Activity>) => void;
   onDelete: (id: string) => void;
@@ -77,6 +79,7 @@ function SortableActivityItem({
   activity,
   tags,
   customFields,
+  listDisplay,
   onToggleComplete,
   onUpdate,
   onDelete,
@@ -86,6 +89,7 @@ function SortableActivityItem({
   activity: Activity;
   tags: Tag[];
   customFields: CustomField[];
+  listDisplay: ActivityListDisplaySettings;
   onToggleComplete: (id: string) => void;
   onUpdate: (id: string, updates: Partial<Activity>) => void;
   onDelete: (id: string) => void;
@@ -113,6 +117,7 @@ function SortableActivityItem({
         activity={activity}
         tags={tags}
         customFields={customFields}
+        listDisplay={listDisplay}
         onToggleComplete={onToggleComplete}
         onUpdate={onUpdate}
         onDelete={onDelete}
@@ -128,6 +133,8 @@ export function ActivityList({
   activities,
   tags,
   customFields,
+  listDisplay,
+  savedFilters,
   onAdd,
   onUpdate,
   onDelete,
@@ -238,11 +245,57 @@ export function ActivityList({
     }
   };
 
+  // Apply saved filters helper
+  const applyFilter = (activity: Activity, filter: FilterConfig): boolean => {
+    if (filter.type === 'tag' && filter.tagId) {
+      return activity.tags.includes(filter.tagId);
+    }
+    
+    if (filter.type === 'field' && filter.fieldId) {
+      const fieldValue = activity.customFields[filter.fieldId];
+      
+      switch (filter.operator) {
+        case 'isEmpty':
+          return fieldValue === null || fieldValue === undefined || fieldValue === '';
+        case 'isNotEmpty':
+          return fieldValue !== null && fieldValue !== undefined && fieldValue !== '';
+        case 'equals':
+          return fieldValue === filter.value;
+        case 'contains':
+          return typeof fieldValue === 'string' && fieldValue.toLowerCase().includes(String(filter.value).toLowerCase());
+        case 'gt':
+          return typeof fieldValue === 'number' && typeof filter.value === 'number' && fieldValue > filter.value;
+        case 'lt':
+          return typeof fieldValue === 'number' && typeof filter.value === 'number' && fieldValue < filter.value;
+        case 'gte':
+          return typeof fieldValue === 'number' && typeof filter.value === 'number' && fieldValue >= filter.value;
+        case 'lte':
+          return typeof fieldValue === 'number' && typeof filter.value === 'number' && fieldValue <= filter.value;
+        case 'between':
+          return typeof fieldValue === 'number' && 
+                 typeof filter.value === 'number' && 
+                 typeof filter.value2 === 'number' &&
+                 fieldValue >= filter.value && fieldValue <= filter.value2;
+        default:
+          return true;
+      }
+    }
+    
+    return true;
+  };
+
   // Filter activities
   const filterActivities = (items: Activity[]) => {
     let filtered = items;
     
-    // Filter by tags
+    // Apply saved filters
+    if (savedFilters && savedFilters.length > 0) {
+      filtered = filtered.filter((activity) => 
+        savedFilters.every((filter) => applyFilter(activity, filter))
+      );
+    }
+    
+    // Filter by manually selected tags (dropdown filter)
     if (selectedTags.length > 0) {
       filtered = filtered.filter((a) => a.tags.some((t) => selectedTags.includes(t)));
     }
@@ -273,6 +326,8 @@ export function ActivityList({
     priority_asc: 'Prioridade (alta primeiro)',
     priority_desc: 'Prioridade (baixa primeiro)',
     createdAt_desc: 'Mais recentes',
+    tag: 'Por Tag',
+    field: 'Por Campo',
   };
 
   const listFields = customFields.filter((f) => f.enabled && (f.display === 'list' || f.display === 'both'));
@@ -465,6 +520,7 @@ export function ActivityList({
                 activity={activity}
                 tags={tags}
                 customFields={listFields}
+                listDisplay={listDisplay}
                 onToggleComplete={onToggleComplete}
                 onUpdate={onUpdate}
                 onDelete={handleDeleteConfirm}
@@ -499,6 +555,7 @@ export function ActivityList({
                     activity={activity}
                     tags={tags}
                     customFields={listFields}
+                    listDisplay={listDisplay}
                     onToggleComplete={onToggleComplete}
                     onUpdate={onUpdate}
                     onDelete={handleDeleteConfirm}
