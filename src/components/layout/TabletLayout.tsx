@@ -1,0 +1,181 @@
+import { NoteEditor } from '@/components/notes/NoteEditor';
+import { NotesSidebar } from '@/components/notes/NotesSidebar';
+import { ActivityList } from '@/components/activities/ActivityList';
+import { Button } from '@/components/ui/button';
+import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
+import { LogOut, User, Menu } from 'lucide-react';
+import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@/components/ui/resizable';
+import { Activity, CustomField, Tag, SortOption, DailyNote, LineType, ActivityListDisplaySettings, FilterConfig, ActivityCreationMode } from '@/types';
+import { SaveStatus } from '@/hooks/useNotes';
+import { useState } from 'react';
+
+interface TabletLayoutProps {
+  // User
+  username: string;
+  onSignOut: () => void;
+  
+  // Notes
+  currentDate: Date;
+  note: DailyNote;
+  onDateChange: (date: Date) => void;
+  onUpdateLine: (lineId: string, updates: { content?: string; type?: LineType }) => void;
+  onAddLine: (afterLineId?: string, type?: LineType) => string;
+  onDeleteLine: (lineId: string) => void;
+  onToggleCollapse: (lineId: string) => void;
+  onUpdateIndent: (lineId: string, delta: number) => void;
+  onSearch: (query: string) => DailyNote[];
+  allDatesWithNotes: string[];
+  saveStatus: SaveStatus;
+  hasUnsavedChanges: boolean;
+  autosaveEnabled: boolean;
+  onSave: () => void;
+  onUndo: () => void;
+  onRedo: () => void;
+  canUndo: boolean;
+  canRedo: boolean;
+  
+  // Activities
+  activities: { active: Activity[]; completed: Activity[] };
+  tags: Tag[];
+  customFields: CustomField[];
+  listDisplay: ActivityListDisplaySettings;
+  savedFilters: FilterConfig[];
+  onAddActivity: (title: string, tags?: string[]) => Promise<Activity | null> | Activity | null;
+  onUpdateActivity: (id: string, updates: Partial<Activity>) => void;
+  onDeleteActivity: (id: string) => void;
+  onToggleComplete: (id: string) => void;
+  onReorderActivities: (startIndex: number, endIndex: number) => void;
+  onOpenSettings: () => void;
+  sortOption: SortOption;
+  onSortChange: (sort: SortOption) => void;
+  allowReopenCompleted: boolean;
+  activityCreationMode: ActivityCreationMode;
+}
+
+export function TabletLayout({
+  username,
+  onSignOut,
+  currentDate,
+  note,
+  onDateChange,
+  onUpdateLine,
+  onAddLine,
+  onDeleteLine,
+  onToggleCollapse,
+  onUpdateIndent,
+  onSearch,
+  allDatesWithNotes,
+  saveStatus,
+  hasUnsavedChanges,
+  autosaveEnabled,
+  onSave,
+  onUndo,
+  onRedo,
+  canUndo,
+  canRedo,
+  activities,
+  tags,
+  customFields,
+  listDisplay,
+  savedFilters,
+  onAddActivity,
+  onUpdateActivity,
+  onDeleteActivity,
+  onToggleComplete,
+  onReorderActivities,
+  onOpenSettings,
+  sortOption,
+  onSortChange,
+  allowReopenCompleted,
+  activityCreationMode,
+}: TabletLayoutProps) {
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  return (
+    <div className="min-h-screen flex flex-col bg-background">
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 py-2 border-b bg-muted/30">
+        <div className="flex items-center gap-2">
+          <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
+            <SheetTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-8 w-8">
+                <Menu className="h-4 w-4" />
+              </Button>
+            </SheetTrigger>
+            <SheetContent side="left" className="w-[280px] p-0">
+              <NotesSidebar
+                dates={allDatesWithNotes}
+                currentDate={currentDate}
+                onSelectDate={(date) => {
+                  onDateChange(date);
+                  setSidebarOpen(false);
+                }}
+                onSearch={onSearch}
+              />
+            </SheetContent>
+          </Sheet>
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <User className="h-4 w-4" />
+            <span>{username}</span>
+          </div>
+        </div>
+        <Button variant="ghost" size="sm" onClick={onSignOut} className="h-8">
+          <LogOut className="h-4 w-4 mr-2" />
+          Sair
+        </Button>
+      </div>
+
+      {/* Main content - Two panels */}
+      <div className="flex-1 flex overflow-hidden">
+        <ResizablePanelGroup direction="horizontal" className="flex-1">
+          {/* Note Editor */}
+          <ResizablePanel defaultSize={55} minSize={35}>
+            <NoteEditor
+              currentDate={currentDate}
+              note={note}
+              onDateChange={onDateChange}
+              onUpdateLine={onUpdateLine}
+              onAddLine={onAddLine}
+              onDeleteLine={onDeleteLine}
+              onToggleCollapse={onToggleCollapse}
+              onUpdateIndent={onUpdateIndent}
+              onSearch={onSearch}
+              allDatesWithNotes={allDatesWithNotes}
+              saveStatus={saveStatus}
+              hasUnsavedChanges={hasUnsavedChanges}
+              autosaveEnabled={autosaveEnabled}
+              onSave={onSave}
+              onUndo={onUndo}
+              onRedo={onRedo}
+              canUndo={canUndo}
+              canRedo={canRedo}
+            />
+          </ResizablePanel>
+
+          <ResizableHandle withHandle />
+
+          {/* Activities Panel */}
+          <ResizablePanel defaultSize={45} minSize={30}>
+            <ActivityList
+              activities={activities}
+              tags={tags}
+              customFields={customFields}
+              listDisplay={listDisplay}
+              savedFilters={savedFilters}
+              onAdd={onAddActivity}
+              onUpdate={onUpdateActivity}
+              onDelete={onDeleteActivity}
+              onToggleComplete={onToggleComplete}
+              onReorder={onReorderActivities}
+              onOpenSettings={onOpenSettings}
+              sortOption={sortOption}
+              onSortChange={onSortChange}
+              allowReopenCompleted={allowReopenCompleted}
+              activityCreationMode={activityCreationMode}
+            />
+          </ResizablePanel>
+        </ResizablePanelGroup>
+      </div>
+    </div>
+  );
+}

@@ -1,13 +1,14 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useTheme } from 'next-themes';
 import { supabase } from '@/integrations/supabase/client';
-import { FontFamily, FontSize, ColorTheme, ThemeMode, AppearanceSettings } from '@/types';
+import { FontFamily, FontSize, ColorTheme, ThemeMode, MobileLayoutMode, AppearanceSettings } from '@/types';
 
 interface UserSettingsRow {
   font_family: string;
   font_size: string;
   color_theme: string;
   theme_mode: string;
+  mobile_layout_mode?: string;
 }
 
 interface UseAppearanceOptions {
@@ -20,6 +21,7 @@ const defaultAppearance: AppearanceSettings = {
   fontSize: 'medium',
   colorTheme: 'amber',
   themeMode: 'system',
+  mobileLayoutMode: 'mobile',
 };
 
 const fontFamilyMap: Record<FontFamily, string> = {
@@ -138,7 +140,7 @@ export function useAppearance(options: UseAppearanceOptions = {}) {
       try {
         const { data, error } = await supabase
           .from('user_settings' as never)
-          .select('font_family, font_size, color_theme, theme_mode')
+          .select('font_family, font_size, color_theme, theme_mode, mobile_layout_mode')
           .eq('user_id', userId)
           .maybeSingle() as { data: UserSettingsRow | null; error: unknown };
 
@@ -148,6 +150,7 @@ export function useAppearance(options: UseAppearanceOptions = {}) {
             fontSize: (data.font_size || 'medium') as FontSize,
             colorTheme: (data.color_theme || 'amber') as ColorTheme,
             themeMode: (data.theme_mode || 'system') as ThemeMode,
+            mobileLayoutMode: (data.mobile_layout_mode || 'mobile') as MobileLayoutMode,
           };
           setAppearance(loaded);
           setTheme(loaded.themeMode);
@@ -200,6 +203,7 @@ export function useAppearance(options: UseAppearanceOptions = {}) {
       if (updates.fontSize !== undefined) dbUpdates.font_size = updates.fontSize;
       if (updates.colorTheme !== undefined) dbUpdates.color_theme = updates.colorTheme;
       if (updates.themeMode !== undefined) dbUpdates.theme_mode = updates.themeMode;
+      if (updates.mobileLayoutMode !== undefined) dbUpdates.mobile_layout_mode = updates.mobileLayoutMode;
 
       await supabase
         .from('user_settings' as never)

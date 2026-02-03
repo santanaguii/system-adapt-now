@@ -81,11 +81,15 @@ export type FontSize = 'small' | 'medium' | 'large';
 export type ColorTheme = 'amber' | 'blue' | 'green' | 'purple' | 'pink';
 export type ThemeMode = 'light' | 'dark' | 'system';
 
+// Layout mode for mobile devices
+export type MobileLayoutMode = 'mobile' | 'desktop';
+
 export interface AppearanceSettings {
   fontFamily: FontFamily;
   fontSize: FontSize;
   colorTheme: ColorTheme;
   themeMode: ThemeMode;
+  mobileLayoutMode: MobileLayoutMode;
 }
 
 // Activity list display settings
