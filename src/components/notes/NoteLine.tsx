@@ -15,11 +15,11 @@ interface NoteLineProps {
 }
 
 const lineTypeClasses: Record<string, string> = {
-  title: 'text-2xl font-semibold text-editor-title leading-tight py-1',
-  subtitle: 'text-lg font-medium text-editor-subtitle leading-snug py-0.5',
-  quote: 'pl-4 border-l-3 border-editor-quote text-editor-quote italic bg-editor-quote-bg py-2 rounded-r-md',
+  title: 'text-3xl font-bold text-editor-title leading-tight py-2 tracking-tight',
+  subtitle: 'text-xl font-semibold text-editor-subtitle leading-snug py-1.5 border-b border-border/40 pb-2',
+  quote: 'pl-4 border-l-4 border-editor-quote text-editor-quote italic bg-editor-quote-bg py-2 rounded-r-md',
   paragraph: 'text-base text-foreground leading-relaxed',
-  bullet: 'text-base text-foreground pl-6 relative before:content-["•"] before:absolute before:left-0 before:text-primary',
+  bullet: 'text-base text-foreground pl-7 relative before:content-["•"] before:absolute before:left-1.5 before:text-primary before:font-bold before:text-lg',
 };
 
 export function NoteLine({ 
