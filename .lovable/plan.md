@@ -1,89 +1,137 @@
 
-# Plano: Corrigir Persistencia das Configuracoes de Lista
+# Plano: Corrigir Lista de Notas e Permitir Editar Nomes de Campos Personalizados
 
-## Diagnostico
+## Problemas Identificados
 
-As configuracoes de exibicao da lista (tags, prazo, prioridade, campos visiveis) nao estao sendo salvas porque:
+### 1. Lista de Notas Filtrando Dias Errado
 
-1. **Colunas ausentes no banco**: Os campos `list_display`, `saved_filters` e `saved_sort` nao existem na tabela `user_settings`
-2. **Updates silenciosos falham**: O codigo tenta salvar nessas colunas inexistentes, mas o erro e ignorado
-3. **Valores resetam ao recarregar**: Como as colunas nao existem, retornam `null` e o sistema usa os valores padrao
+O problema esta em **dois locais** onde strings de data sao convertidas para objetos `Date` usando `new Date(dateStr)`:
 
----
+**Arquivo: `src/components/notes/NoteEditor.tsx`**
+- **Linha 303-306**: `onDateChange(new Date(date))` - quando seleciona uma data da lista de notas
+- **Linha 313**: `onDateChange(new Date(result.date))` - quando seleciona um resultado de busca
+- **Linha 317**: `format(new Date(result.date), ...)` - quando formata a data do resultado
 
-## Solucao
+**O problema**: Usar `new Date("2025-02-03")` interpreta a string como UTC meia-noite, que ao converter para horario local pode resultar em um dia diferente (por exemplo, 2 de fevereiro as 21h em UTC-3).
 
-Criar uma migracao Supabase para adicionar as tres colunas JSONB a tabela `user_settings`.
+**Solucao**: Usar parsing manual com split para criar a data em horario local:
+```typescript
+// ANTES (problematico)
+onDateChange(new Date(date));
 
----
-
-## Arquivos a Criar
-
-| Arquivo | Descricao |
-|---------|-----------|
-| `supabase/migrations/[timestamp]_add_list_display_columns.sql` | Migracao para adicionar colunas |
-
----
-
-## Conteudo da Migracao
-
-```sql
--- Adicionar colunas para configuracoes de exibicao da lista
-ALTER TABLE user_settings 
-ADD COLUMN IF NOT EXISTS list_display JSONB DEFAULT '{"showTags": true, "showDueDate": true, "showPriority": true, "visibleFieldIds": []}'::jsonb;
-
-ALTER TABLE user_settings 
-ADD COLUMN IF NOT EXISTS saved_filters JSONB DEFAULT '[]'::jsonb;
-
-ALTER TABLE user_settings 
-ADD COLUMN IF NOT EXISTS saved_sort JSONB DEFAULT '{"type": "manual", "direction": "asc"}'::jsonb;
-
--- Atualizar registros existentes que tem valores nulos
-UPDATE user_settings 
-SET list_display = '{"showTags": true, "showDueDate": true, "showPriority": true, "visibleFieldIds": []}'::jsonb
-WHERE list_display IS NULL;
-
-UPDATE user_settings 
-SET saved_filters = '[]'::jsonb
-WHERE saved_filters IS NULL;
-
-UPDATE user_settings 
-SET saved_sort = '{"type": "manual", "direction": "asc"}'::jsonb
-WHERE saved_sort IS NULL;
+// DEPOIS (correto)
+const parseDateString = (dateStr: string): Date => {
+  const [year, month, day] = dateStr.split('-').map(Number);
+  return new Date(year, month - 1, day);
+};
+onDateChange(parseDateString(date));
 ```
 
----
+### 2. Editar Nome de Campos Personalizados
 
-## Verificacao do Codigo Existente
+Atualmente, a aba "Campos" em `src/components/settings/SettingsPanel.tsx` permite:
+- Habilitar/desabilitar campos (Switch)
+- Editar opcoes de campos do tipo selecao
+- Excluir campos
 
-O codigo em `useSettings.ts` ja esta correto:
+**Mas NAO permite editar o nome do campo** - o nome e exibido apenas como texto estatico na linha 231.
 
-- Linhas 426-448: `updateListDisplay` ja faz update correto no campo `list_display`
-- Linhas 451-469: `updateSavedFilters` ja faz update correto no campo `saved_filters`  
-- Linhas 472-490: `updateSavedSort` ja faz update correto no campo `saved_sort`
-- Linhas 148-163: Carrega os valores do banco com fallback para defaults
-
-O problema e **apenas** a falta das colunas no banco.
+**Solucao**: Substituir o texto estatico por um Input editavel (similar ao que ja existe para Tags na linha 338-340).
 
 ---
 
-## Passos de Implementacao
+## Arquivos a Modificar
 
-1. Criar arquivo de migracao SQL
-2. Executar a migracao (automaticamente ao salvar)
-3. Testar as configuracoes de lista:
-   - Desabilitar "Mostrar Tags" e recarregar a pagina
-   - A configuracao deve persistir
+| Arquivo | Alteracao |
+|---------|-----------|
+| `src/components/notes/NoteEditor.tsx` | Adicionar funcao `parseDateString` e usar nos 3 locais onde `new Date(dateStr)` e usado |
+| `src/components/settings/SettingsPanel.tsx` | Substituir texto estatico do nome do campo por Input editavel |
+
+---
+
+## Alteracoes Detalhadas
+
+### 1. NoteEditor.tsx - Corrigir parsing de datas
+
+Adicionar funcao auxiliar no inicio do componente:
+```typescript
+// Parse date string to local Date (avoiding UTC interpretation)
+const parseDateString = (dateStr: string): Date => {
+  const [year, month, day] = dateStr.split('-').map(Number);
+  return new Date(year, month - 1, day);
+};
+```
+
+Atualizar os tres locais:
+
+**Linha 303-306** (NotesList callback):
+```typescript
+// DE:
+onDateChange(new Date(date));
+
+// PARA:
+onDateChange(parseDateString(date));
+```
+
+**Linha 313** (resultado de busca):
+```typescript
+// DE:
+onDateChange(new Date(result.date));
+
+// PARA:
+onDateChange(parseDateString(result.date));
+```
+
+**Linha 317** (formatacao de resultado):
+```typescript
+// DE:
+format(new Date(result.date), "d 'de' MMMM", { locale: ptBR })
+
+// PARA:
+format(parseDateString(result.date), "d 'de' MMMM", { locale: ptBR })
+```
+
+### 2. SettingsPanel.tsx - Permitir editar nome do campo
+
+**Linha 230-235** - Substituir o paragrafo estatico por um Input:
+```typescript
+// DE:
+<div className="flex-1">
+  <p className="font-medium">{field.name}</p>
+  <p className="text-xs text-muted-foreground">
+    {fieldTypes.find((t) => t.value === field.type)?.label}
+    {field.required && ' • Obrigatório'}
+  </p>
+</div>
+
+// PARA:
+<div className="flex-1 space-y-1">
+  <Input
+    value={field.name}
+    onChange={(e) => onUpdateField(field.id, { name: e.target.value })}
+    className="h-7 text-sm font-medium"
+  />
+  <p className="text-xs text-muted-foreground">
+    {fieldTypes.find((t) => t.value === field.type)?.label}
+    {field.required && ' • Obrigatório'}
+  </p>
+</div>
+```
 
 ---
 
 ## Resultado Esperado
 
-Apos a correcao:
+Apos as correcoes:
 
-- Toggle de "Mostrar Tags" persiste ao recarregar
-- Toggle de "Mostrar Data de Prazo" persiste ao recarregar  
-- Toggle de "Mostrar Prioridade" persiste ao recarregar
-- Campos personalizados visiveis persistem ao recarregar
-- Filtros salvos persistem ao recarregar
-- Ordenacao padrao persiste ao recarregar
+1. **Lista de notas**: Clicar em uma data na lista ou em um resultado de busca navega para o dia correto (sem deslocamento de fuso horario)
+
+2. **Campos personalizados**: O nome de cada campo pode ser editado diretamente clicando no texto e digitando o novo nome
+
+---
+
+## Impacto
+
+- Nenhuma alteracao de banco de dados necessaria
+- Nenhum novo componente necessario
+- Alteracoes localizadas em apenas 2 arquivos
