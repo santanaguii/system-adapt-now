@@ -1,42 +1,33 @@
 
-# Plano: Corrigir Lista de Notas e Permitir Editar Nomes de Campos Personalizados
+# Plano: Corrigir Lista de Notas para Mostrar Apenas Dias com Conteudo
 
-## Problemas Identificados
+## Diagnostico
 
-### 1. Lista de Notas Filtrando Dias Errado
+O problema esta na **conversao desnecessaria** em `Index.tsx` linha 185:
 
-O problema esta em **dois locais** onde strings de data sao convertidas para objetos `Date` usando `new Date(dateStr)`:
-
-**Arquivo: `src/components/notes/NoteEditor.tsx`**
-- **Linha 303-306**: `onDateChange(new Date(date))` - quando seleciona uma data da lista de notas
-- **Linha 313**: `onDateChange(new Date(result.date))` - quando seleciona um resultado de busca
-- **Linha 317**: `format(new Date(result.date), ...)` - quando formata a data do resultado
-
-**O problema**: Usar `new Date("2025-02-03")` interpreta a string como UTC meia-noite, que ao converter para horario local pode resultar em um dia diferente (por exemplo, 2 de fevereiro as 21h em UTC-3).
-
-**Solucao**: Usar parsing manual com split para criar a data em horario local:
 ```typescript
-// ANTES (problematico)
-onDateChange(new Date(date));
-
-// DEPOIS (correto)
-const parseDateString = (dateStr: string): Date => {
-  const [year, month, day] = dateStr.split('-').map(Number);
-  return new Date(year, month - 1, day);
-};
-onDateChange(parseDateString(date));
+const allDatesWithNotesStrings = allDatesWithNotes.map(d => format(d, 'yyyy-MM-dd'));
 ```
 
-### 2. Editar Nome de Campos Personalizados
+### Por que esta errado?
 
-Atualmente, a aba "Campos" em `src/components/settings/SettingsPanel.tsx` permite:
-- Habilitar/desabilitar campos (Switch)
-- Editar opcoes de campos do tipo selecao
-- Excluir campos
+1. O hook `useNotes.ts` ja retorna **strings** no formato `'yyyy-MM-dd'`:
+   ```typescript
+   // useNotes.ts linha 437-443
+   const allDatesWithNotes = useMemo(() => {
+     return notes
+       .filter((n) => n.lines.some((l) => l.content.trim() !== ''))
+       .map((n) => n.date)  // n.date ja e string 'yyyy-MM-dd'
+       .sort()
+       .reverse();
+   }, [notes]);
+   ```
 
-**Mas NAO permite editar o nome do campo** - o nome e exibido apenas como texto estatico na linha 231.
+2. Mas `Index.tsx` tenta usar `format()` do date-fns em strings:
+   - `format("2025-02-03", 'yyyy-MM-dd')` pode interpretar como UTC
+   - Isso causa deslocamento de fuso horario e datas erradas
 
-**Solucao**: Substituir o texto estatico por um Input editavel (similar ao que ja existe para Tags na linha 338-340).
+3. A filtragem esta correta no hook, mas os dados chegam corrompidos na UI
 
 ---
 
@@ -44,94 +35,46 @@ Atualmente, a aba "Campos" em `src/components/settings/SettingsPanel.tsx` permit
 
 | Arquivo | Alteracao |
 |---------|-----------|
-| `src/components/notes/NoteEditor.tsx` | Adicionar funcao `parseDateString` e usar nos 3 locais onde `new Date(dateStr)` e usado |
-| `src/components/settings/SettingsPanel.tsx` | Substituir texto estatico do nome do campo por Input editavel |
+| `src/pages/Index.tsx` | Remover conversao desnecessaria, usar `allDatesWithNotes` diretamente |
 
 ---
 
-## Alteracoes Detalhadas
+## Alteracao
 
-### 1. NoteEditor.tsx - Corrigir parsing de datas
+**Linha 184-185** de `Index.tsx`:
 
-Adicionar funcao auxiliar no inicio do componente:
 ```typescript
-// Parse date string to local Date (avoiding UTC interpretation)
-const parseDateString = (dateStr: string): Date => {
-  const [year, month, day] = dateStr.split('-').map(Number);
-  return new Date(year, month - 1, day);
-};
+// ANTES (incorreto - tenta formatar strings)
+const allDatesWithNotesStrings = allDatesWithNotes.map(d => format(d, 'yyyy-MM-dd'));
+
+// DEPOIS (correto - usa diretamente as strings do hook)
+// Remover essa linha e usar allDatesWithNotes diretamente nos props
 ```
 
-Atualizar os tres locais:
+**Linha 200** - Atualizar a prop:
 
-**Linha 303-306** (NotesList callback):
 ```typescript
-// DE:
-onDateChange(new Date(date));
+// ANTES
+allDatesWithNotes: allDatesWithNotesStrings,
 
-// PARA:
-onDateChange(parseDateString(date));
-```
-
-**Linha 313** (resultado de busca):
-```typescript
-// DE:
-onDateChange(new Date(result.date));
-
-// PARA:
-onDateChange(parseDateString(result.date));
-```
-
-**Linha 317** (formatacao de resultado):
-```typescript
-// DE:
-format(new Date(result.date), "d 'de' MMMM", { locale: ptBR })
-
-// PARA:
-format(parseDateString(result.date), "d 'de' MMMM", { locale: ptBR })
-```
-
-### 2. SettingsPanel.tsx - Permitir editar nome do campo
-
-**Linha 230-235** - Substituir o paragrafo estatico por um Input:
-```typescript
-// DE:
-<div className="flex-1">
-  <p className="font-medium">{field.name}</p>
-  <p className="text-xs text-muted-foreground">
-    {fieldTypes.find((t) => t.value === field.type)?.label}
-    {field.required && ' • Obrigatório'}
-  </p>
-</div>
-
-// PARA:
-<div className="flex-1 space-y-1">
-  <Input
-    value={field.name}
-    onChange={(e) => onUpdateField(field.id, { name: e.target.value })}
-    className="h-7 text-sm font-medium"
-  />
-  <p className="text-xs text-muted-foreground">
-    {fieldTypes.find((t) => t.value === field.type)?.label}
-    {field.required && ' • Obrigatório'}
-  </p>
-</div>
+// DEPOIS
+allDatesWithNotes: allDatesWithNotes,
 ```
 
 ---
 
 ## Resultado Esperado
 
-Apos as correcoes:
+Apos a correcao:
 
-1. **Lista de notas**: Clicar em uma data na lista ou em um resultado de busca navega para o dia correto (sem deslocamento de fuso horario)
-
-2. **Campos personalizados**: O nome de cada campo pode ser editado diretamente clicando no texto e digitando o novo nome
+1. A lista de notas mostrara **apenas dias que tem notas com conteudo**
+2. Os dias serao exibidos corretamente sem deslocamento de fuso horario
+3. A filtragem do hook sera preservada corretamente
 
 ---
 
 ## Impacto
 
-- Nenhuma alteracao de banco de dados necessaria
-- Nenhum novo componente necessario
-- Alteracoes localizadas em apenas 2 arquivos
+- Apenas 1 arquivo modificado
+- Remocao de codigo desnecessario (1 linha)
+- Atualizacao de 1 referencia
