@@ -227,8 +227,12 @@ export function SettingsPanel({
                       checked={field.enabled}
                       onCheckedChange={(checked) => onUpdateField(field.id, { enabled: checked })}
                     />
-                    <div className="flex-1">
-                      <p className="font-medium">{field.name}</p>
+                    <div className="flex-1 space-y-1">
+                      <Input
+                        value={field.name}
+                        onChange={(e) => onUpdateField(field.id, { name: e.target.value })}
+                        className="h-7 text-sm font-medium"
+                      />
                       <p className="text-xs text-muted-foreground">
                         {fieldTypes.find((t) => t.value === field.type)?.label}
                         {field.required && ' • Obrigatório'}
