@@ -181,9 +181,6 @@ const Index = () => {
     [currentDate, updateLineIndent]
   );
 
-  // Convert dates to string format for components that expect it
-  const allDatesWithNotesStrings = allDatesWithNotes.map(d => format(d, 'yyyy-MM-dd'));
-
   // Common props for layouts
   const commonProps = {
     username: user?.username || '',
@@ -197,7 +194,7 @@ const Index = () => {
     onToggleCollapse: handleToggleCollapse,
     onUpdateIndent: handleUpdateIndent,
     onSearch: searchNotes,
-    allDatesWithNotes: allDatesWithNotesStrings,
+    allDatesWithNotes,
     saveStatus,
     hasUnsavedChanges,
     autosaveEnabled: settings.autosaveEnabled,
@@ -259,7 +256,7 @@ const Index = () => {
             {/* Notes Sidebar */}
             <ResizablePanel defaultSize={20} minSize={15} maxSize={35}>
               <NotesSidebar
-                dates={allDatesWithNotesStrings}
+                dates={allDatesWithNotes}
                 currentDate={currentDate}
                 onSelectDate={handleDateChange}
                 onSearch={searchNotes}
@@ -280,7 +277,7 @@ const Index = () => {
                 onToggleCollapse={handleToggleCollapse}
                 onUpdateIndent={handleUpdateIndent}
                 onSearch={searchNotes}
-                allDatesWithNotes={allDatesWithNotesStrings}
+                allDatesWithNotes={allDatesWithNotes}
                 saveStatus={saveStatus}
                 hasUnsavedChanges={hasUnsavedChanges}
                 autosaveEnabled={settings.autosaveEnabled}
