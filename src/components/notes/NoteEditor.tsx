@@ -301,7 +301,9 @@ export function NoteEditor({
 
       {/* Notes list sidebar */}
       {showNotesList && <NotesList dates={allDatesWithNotes} currentDate={format(currentDate, 'yyyy-MM-dd')} onSelectDate={date => {
-      onDateChange(new Date(date));
+      // Parse date string to local Date (avoiding UTC interpretation)
+      const [year, month, day] = date.split('-').map(Number);
+      onDateChange(new Date(year, month - 1, day));
       setShowNotesList(false);
     }} onClose={() => setShowNotesList(false)} />}
 
@@ -309,19 +311,24 @@ export function NoteEditor({
       {isSearching && <div className="px-4 py-2 border-b">
           <Input placeholder="Pesquisar nas notas..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="h-8" autoFocus />
           {searchResults.length > 0 && <div className="mt-2 space-y-1 max-h-40 overflow-y-auto">
-              {searchResults.map(result => <button key={result.date} className="w-full text-left px-2 py-1 rounded hover:bg-muted text-sm" onClick={() => {
-          onDateChange(new Date(result.date));
-          setIsSearching(false);
-        }}>
-                  <span className="font-medium">
-                    {format(new Date(result.date), "d 'de' MMMM", {
-              locale: ptBR
-            })}
-                  </span>
-                  <span className="text-muted-foreground ml-2 truncate">
-                    {result.lines[0]?.content.substring(0, 50)}...
-                  </span>
-                </button>)}
+              {searchResults.map(result => {
+                // Parse date string to local Date (avoiding UTC interpretation)
+                const [year, month, day] = result.date.split('-').map(Number);
+                const localDate = new Date(year, month - 1, day);
+                return (
+                  <button key={result.date} className="w-full text-left px-2 py-1 rounded hover:bg-muted text-sm" onClick={() => {
+                    onDateChange(localDate);
+                    setIsSearching(false);
+                  }}>
+                    <span className="font-medium">
+                      {format(localDate, "d 'de' MMMM", { locale: ptBR })}
+                    </span>
+                    <span className="text-muted-foreground ml-2 truncate">
+                      {result.lines[0]?.content.substring(0, 50)}...
+                    </span>
+                  </button>
+                );
+              })}
             </div>}
         </div>}
 
