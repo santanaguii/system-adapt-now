@@ -55,7 +55,7 @@ export interface Activity {
   completedAt?: Date;
 }
 
-export type LineType = 'paragraph' | 'title' | 'subtitle' | 'quote' | 'bullet';
+export type LineType = 'paragraph' | 'title' | 'subtitle' | 'quote' | 'bullet' | 'comment';
 
 export interface NoteLine {
   id: string;
