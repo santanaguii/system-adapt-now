@@ -20,6 +20,7 @@ const lineTypeClasses: Record<string, string> = {
   quote: 'pl-4 border-l-4 border-editor-quote text-editor-quote italic bg-editor-quote-bg py-2 rounded-r-md',
   paragraph: 'text-base text-foreground leading-relaxed',
   bullet: 'text-base text-foreground pl-7 relative before:content-["•"] before:absolute before:left-1.5 before:text-primary before:font-bold before:text-lg',
+  comment: 'text-sm text-muted-foreground/70 italic pl-4',
 };
 
 export function NoteLine({ 
