@@ -360,7 +360,7 @@ export function NoteEditor({
         <span>Ctrl+3: Citação</span>
         <span>Ctrl+4: Tópico</span>
         <span>Ctrl+0: Parágrafo</span>
-        <span>Tab/Shift+Tab: Indentação</span>
+        <span>Ctrl+5: Comentário</span>
       </div>
 
       {/* Editor content */}
