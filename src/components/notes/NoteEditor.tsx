@@ -57,6 +57,7 @@ export function NoteEditor({
   const [focusedLineId, setFocusedLineId] = useState<string | null>(null);
   const [showNotesList, setShowNotesList] = useState(false);
   const [highlightTerms, setHighlightTerms] = useState<string[]>([]);
+  const [hideComments, setHideComments] = useState(false);
   const editorRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (searchQuery.trim()) {
