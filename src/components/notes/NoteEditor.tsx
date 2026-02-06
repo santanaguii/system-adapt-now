@@ -361,6 +361,7 @@ export function NoteEditor({
         <span>Ctrl+4: Tópico</span>
         <span>Ctrl+0: Parágrafo</span>
         <span>Ctrl+5: Comentário</span>
+        <span>Tab/Shift+Tab: Indentação</span>
       </div>
 
       {/* Editor content */}
