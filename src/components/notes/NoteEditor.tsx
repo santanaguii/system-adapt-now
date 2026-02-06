@@ -104,6 +104,11 @@ export function NoteEditor({
       const line = lines[i];
       const lineLevel = line.type === 'title' ? 1 : line.type === 'subtitle' ? 2 : 3;
 
+      // If hiding comments, skip comment lines
+      if (hideComments && line.type === 'comment') {
+        continue;
+      }
+
       // If we're skipping, check if we should stop
       if (skipUntilLevel !== null) {
         if (lineLevel <= skipUntilLevel) {
