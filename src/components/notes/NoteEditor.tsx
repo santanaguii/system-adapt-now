@@ -125,7 +125,7 @@ export function NoteEditor({
       }
     }
     return visibleLines;
-  }, [note.lines]);
+  }, [note.lines, hideComments]);
   const visibleLines = getVisibleLines();
   const handleKeyDown = useCallback((lineId: string, e: React.KeyboardEvent) => {
     const allLines = note.lines;
