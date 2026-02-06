@@ -195,6 +195,12 @@ export function NoteEditor({
             type: 'paragraph'
           });
           break;
+        case '5':
+          e.preventDefault();
+          onUpdateLine(lineId, {
+            type: 'comment'
+          });
+          break;
       }
     }
   }, [note.lines, visibleLines, onAddLine, onDeleteLine, onUpdateLine, onUpdateIndent]);
