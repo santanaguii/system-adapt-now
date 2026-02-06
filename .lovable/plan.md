@@ -1,80 +1,77 @@
 
-# Plano: Corrigir Lista de Notas para Mostrar Apenas Dias com Conteudo
 
-## Diagnostico
+# Plano: Adicionar tipo "Comentario" e botao para ocultar/exibir comentarios
 
-O problema esta na **conversao desnecessaria** em `Index.tsx` linha 185:
+## Resumo
+
+Adicionar um novo tipo de linha "comment" (comentario) ao editor de notas, com estilo visual diferenciado (cor clara e italico), e um botao toggle no header para ocultar/exibir todas as linhas de comentario.
+
+---
+
+## Alteracoes por arquivo
+
+### 1. `src/types/index.ts`
+
+Adicionar `'comment'` ao tipo `LineType`:
 
 ```typescript
-const allDatesWithNotesStrings = allDatesWithNotes.map(d => format(d, 'yyyy-MM-dd'));
+export type LineType = 'paragraph' | 'title' | 'subtitle' | 'quote' | 'bullet' | 'comment';
 ```
 
-### Por que esta errado?
+### 2. `src/components/notes/NoteLine.tsx`
 
-1. O hook `useNotes.ts` ja retorna **strings** no formato `'yyyy-MM-dd'`:
-   ```typescript
-   // useNotes.ts linha 437-443
-   const allDatesWithNotes = useMemo(() => {
-     return notes
-       .filter((n) => n.lines.some((l) => l.content.trim() !== ''))
-       .map((n) => n.date)  // n.date ja e string 'yyyy-MM-dd'
-       .sort()
-       .reverse();
-   }, [notes]);
-   ```
-
-2. Mas `Index.tsx` tenta usar `format()` do date-fns em strings:
-   - `format("2025-02-03", 'yyyy-MM-dd')` pode interpretar como UTC
-   - Isso causa deslocamento de fuso horario e datas erradas
-
-3. A filtragem esta correta no hook, mas os dados chegam corrompidos na UI
-
----
-
-## Arquivos a Modificar
-
-| Arquivo | Alteracao |
-|---------|-----------|
-| `src/pages/Index.tsx` | Remover conversao desnecessaria, usar `allDatesWithNotes` diretamente |
-
----
-
-## Alteracao
-
-**Linha 184-185** de `Index.tsx`:
+Adicionar estilo do comentario no objeto `lineTypeClasses`:
 
 ```typescript
-// ANTES (incorreto - tenta formatar strings)
-const allDatesWithNotesStrings = allDatesWithNotes.map(d => format(d, 'yyyy-MM-dd'));
-
-// DEPOIS (correto - usa diretamente as strings do hook)
-// Remover essa linha e usar allDatesWithNotes diretamente nos props
+comment: 'text-sm text-muted-foreground/70 italic pl-4',
 ```
 
-**Linha 200** - Atualizar a prop:
+Adicionar placeholder para o tipo comment:
 
 ```typescript
-// ANTES
-allDatesWithNotes: allDatesWithNotesStrings,
-
-// DEPOIS
-allDatesWithNotes: allDatesWithNotes,
+line.type === 'comment' ? 'Comentário...' : 'Escreva aqui...'
 ```
 
+### 3. `src/components/notes/NoteEditor.tsx`
+
+**3a. Novo estado para controlar visibilidade dos comentarios:**
+
+```typescript
+const [hideComments, setHideComments] = useState(false);
+```
+
+**3b. Filtrar linhas de comentario no `getVisibleLines`:**
+
+Adicionar verificacao: se `hideComments` for `true`, pular linhas com `type === 'comment'`.
+
+**3c. Botao toggle no header (ao lado de undo/redo):**
+
+Usar o icone `MessageSquareOff` (comentarios ocultos) ou `MessageSquare` (comentarios visiveis) do lucide-react.
+
+**3d. Atalho de teclado Ctrl+5 para tipo comentario:**
+
+Adicionar caso `'5'` no switch de atalhos que define o tipo da linha.
+
+**3e. Atualizar barra de atalhos:**
+
+Adicionar `Ctrl+5: Comentário` na lista de hints.
+
 ---
 
-## Resultado Esperado
+## Detalhes tecnicos
 
-Apos a correcao:
-
-1. A lista de notas mostrara **apenas dias que tem notas com conteudo**
-2. Os dias serao exibidos corretamente sem deslocamento de fuso horario
-3. A filtragem do hook sera preservada corretamente
+| Item | Detalhe |
+|------|---------|
+| Arquivos modificados | `src/types/index.ts`, `src/components/notes/NoteLine.tsx`, `src/components/notes/NoteEditor.tsx` |
+| Novos componentes | Nenhum |
+| Banco de dados | Nenhuma alteracao necessaria (o tipo e salvo como string no campo `type` da linha) |
+| Icones | `MessageSquare` e `MessageSquareOff` do lucide-react |
 
 ---
 
-## Impacto
+## Visual esperado
 
-- Apenas 1 arquivo modificado
-- Remocao de codigo desnecessario (1 linha)
-- Atualizacao de 1 referencia
+- **Comentario visivel**: texto em tamanho menor, cor `muted-foreground/70`, italico, com leve recuo a esquerda
+- **Botao toggle**: icone no header que alterna entre mostrar/ocultar comentarios, com tooltip indicando o estado atual
+- **Atalho**: Ctrl+5 converte a linha atual em comentario
+
