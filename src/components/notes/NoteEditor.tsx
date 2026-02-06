@@ -8,7 +8,7 @@ import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { CalendarIcon, ChevronLeft, ChevronRight, Undo2, Redo2, Loader2, Check, AlertCircle, Save } from 'lucide-react';
+import { CalendarIcon, ChevronLeft, ChevronRight, Undo2, Redo2, Loader2, Check, AlertCircle, Save, MessageSquare, MessageSquareOff } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { SaveStatus } from '@/hooks/useNotes';
 interface NoteEditorProps {

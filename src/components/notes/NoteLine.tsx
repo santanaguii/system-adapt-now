@@ -131,7 +131,9 @@ export function NoteLine({
                 ? 'Título...' 
                 : line.type === 'subtitle' 
                   ? 'Subtítulo...' 
-                  : 'Escreva aqui...'
+                  : line.type === 'comment'
+                    ? 'Comentário...'
+                    : 'Escreva aqui...'
             }
             className={cn(
               'w-full bg-transparent border-none outline-none resize-none overflow-hidden',
