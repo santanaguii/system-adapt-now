@@ -8,7 +8,7 @@ import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { CalendarIcon, ChevronLeft, ChevronRight, Undo2, Redo2, Loader2, Check, AlertCircle, Save } from 'lucide-react';
+import { CalendarIcon, ChevronLeft, ChevronRight, Undo2, Redo2, Loader2, Check, AlertCircle, Save, MessageSquare, MessageSquareOff } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { SaveStatus } from '@/hooks/useNotes';
 interface NoteEditorProps {
@@ -57,6 +57,7 @@ export function NoteEditor({
   const [focusedLineId, setFocusedLineId] = useState<string | null>(null);
   const [showNotesList, setShowNotesList] = useState(false);
   const [highlightTerms, setHighlightTerms] = useState<string[]>([]);
+  const [hideComments, setHideComments] = useState(false);
   const editorRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (searchQuery.trim()) {
@@ -103,6 +104,11 @@ export function NoteEditor({
       const line = lines[i];
       const lineLevel = line.type === 'title' ? 1 : line.type === 'subtitle' ? 2 : 3;
 
+      // If hiding comments, skip comment lines
+      if (hideComments && line.type === 'comment') {
+        continue;
+      }
+
       // If we're skipping, check if we should stop
       if (skipUntilLevel !== null) {
         if (lineLevel <= skipUntilLevel) {
@@ -119,7 +125,7 @@ export function NoteEditor({
       }
     }
     return visibleLines;
-  }, [note.lines]);
+  }, [note.lines, hideComments]);
   const visibleLines = getVisibleLines();
   const handleKeyDown = useCallback((lineId: string, e: React.KeyboardEvent) => {
     const allLines = note.lines;
@@ -187,6 +193,12 @@ export function NoteEditor({
           e.preventDefault();
           onUpdateLine(lineId, {
             type: 'paragraph'
+          });
+          break;
+        case '5':
+          e.preventDefault();
+          onUpdateLine(lineId, {
+            type: 'comment'
           });
           break;
       }
@@ -277,6 +289,15 @@ export function NoteEditor({
         </div>
 
         <div className="flex items-center gap-1">
+          <Button
+            variant={hideComments ? "default" : "ghost"}
+            size="icon"
+            className="h-8 w-8"
+            onClick={() => setHideComments(!hideComments)}
+            title={hideComments ? "Mostrar comentários" : "Ocultar comentários"}
+          >
+            {hideComments ? <MessageSquareOff className="h-4 w-4" /> : <MessageSquare className="h-4 w-4" />}
+          </Button>
           <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onUndo} disabled={!canUndo} title="Desfazer (Ctrl+Z)">
             <Undo2 className="h-4 w-4" />
           </Button>
@@ -339,6 +360,7 @@ export function NoteEditor({
         <span>Ctrl+3: Citação</span>
         <span>Ctrl+4: Tópico</span>
         <span>Ctrl+0: Parágrafo</span>
+        <span>Ctrl+5: Comentário</span>
         <span>Tab/Shift+Tab: Indentação</span>
       </div>
 
