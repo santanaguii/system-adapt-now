@@ -14,13 +14,266 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      activities: {
+        Row: {
+          completed: boolean | null
+          completed_at: string | null
+          created_at: string | null
+          custom_fields: Json | null
+          description: string | null
+          id: string
+          sort_order: number | null
+          status: string | null
+          tags: string[] | null
+          title: string
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          completed?: boolean | null
+          completed_at?: string | null
+          created_at?: string | null
+          custom_fields?: Json | null
+          description?: string | null
+          id?: string
+          sort_order?: number | null
+          status?: string | null
+          tags?: string[] | null
+          title: string
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          completed?: boolean | null
+          completed_at?: string | null
+          created_at?: string | null
+          custom_fields?: Json | null
+          description?: string | null
+          id?: string
+          sort_order?: number | null
+          status?: string | null
+          tags?: string[] | null
+          title?: string
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      custom_fields: {
+        Row: {
+          default_value: Json | null
+          display: string | null
+          enabled: boolean | null
+          field_type: string
+          id: string
+          key: string
+          name: string
+          options: string[] | null
+          required: boolean | null
+          sort_order: number | null
+          user_id: string
+          validation: Json | null
+        }
+        Insert: {
+          default_value?: Json | null
+          display?: string | null
+          enabled?: boolean | null
+          field_type: string
+          id?: string
+          key: string
+          name: string
+          options?: string[] | null
+          required?: boolean | null
+          sort_order?: number | null
+          user_id: string
+          validation?: Json | null
+        }
+        Update: {
+          default_value?: Json | null
+          display?: string | null
+          enabled?: boolean | null
+          field_type?: string
+          id?: string
+          key?: string
+          name?: string
+          options?: string[] | null
+          required?: boolean | null
+          sort_order?: number | null
+          user_id?: string
+          validation?: Json | null
+        }
+        Relationships: []
+      }
+      note_lines: {
+        Row: {
+          collapsed: boolean | null
+          content: string | null
+          id: string
+          indent: number | null
+          line_type: string | null
+          note_id: string
+          sort_order: number | null
+        }
+        Insert: {
+          collapsed?: boolean | null
+          content?: string | null
+          id?: string
+          indent?: number | null
+          line_type?: string | null
+          note_id: string
+          sort_order?: number | null
+        }
+        Update: {
+          collapsed?: boolean | null
+          content?: string | null
+          id?: string
+          indent?: number | null
+          line_type?: string | null
+          note_id?: string
+          sort_order?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "note_lines_note_id_fkey"
+            columns: ["note_id"]
+            isOneToOne: false
+            referencedRelation: "notes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      notes: {
+        Row: {
+          date: string
+          id: string
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          date: string
+          id?: string
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          date?: string
+          id?: string
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      profiles: {
+        Row: {
+          created_at: string | null
+          id: string
+          security_answer_hash: string
+          security_question: string
+          updated_at: string | null
+          username: string
+        }
+        Insert: {
+          created_at?: string | null
+          id: string
+          security_answer_hash: string
+          security_question: string
+          updated_at?: string | null
+          username: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          security_answer_hash?: string
+          security_question?: string
+          updated_at?: string | null
+          username?: string
+        }
+        Relationships: []
+      }
+      tags: {
+        Row: {
+          color: string
+          id: string
+          name: string
+          user_id: string
+        }
+        Insert: {
+          color?: string
+          id?: string
+          name: string
+          user_id: string
+        }
+        Update: {
+          color?: string
+          id?: string
+          name?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      user_settings: {
+        Row: {
+          activity_creation_mode: string | null
+          allow_reopen_completed: boolean | null
+          autosave_enabled: boolean
+          color_theme: string
+          default_sort: string | null
+          font_family: string
+          font_size: string
+          id: string
+          list_display: Json | null
+          mobile_layout_mode: string | null
+          saved_filters: Json | null
+          saved_sort: Json | null
+          theme_mode: string
+          user_id: string
+        }
+        Insert: {
+          activity_creation_mode?: string | null
+          allow_reopen_completed?: boolean | null
+          autosave_enabled?: boolean
+          color_theme?: string
+          default_sort?: string | null
+          font_family?: string
+          font_size?: string
+          id?: string
+          list_display?: Json | null
+          mobile_layout_mode?: string | null
+          saved_filters?: Json | null
+          saved_sort?: Json | null
+          theme_mode?: string
+          user_id: string
+        }
+        Update: {
+          activity_creation_mode?: string | null
+          allow_reopen_completed?: boolean | null
+          autosave_enabled?: boolean
+          color_theme?: string
+          default_sort?: string | null
+          font_family?: string
+          font_size?: string
+          id?: string
+          list_display?: Json | null
+          mobile_layout_mode?: string | null
+          saved_filters?: Json | null
+          saved_sort?: Json | null
+          theme_mode?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      check_username_exists: { Args: { p_username: string }; Returns: boolean }
+      get_security_question: { Args: { p_username: string }; Returns: string }
+      get_user_id_by_username: { Args: { p_username: string }; Returns: string }
+      verify_security_answer: {
+        Args: { p_answer_hash: string; p_username: string }
+        Returns: boolean
+      }
     }
     Enums: {
       [_ in never]: never
