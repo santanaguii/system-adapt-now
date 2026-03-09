@@ -1,8 +1,8 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Roboto:wght@300;400;500;700&family=Open+Sans:wght@300;400;500;600;700&family=Poppins:wght@300;400;500;600;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Roboto:wght@300;400;500;700&family=Open+Sans:wght@300;400;500;600;700&family=Poppins:wght@300;400;500;600;700&display=swap');
 
 @layer base {
   :root {
@@ -203,6 +203,27 @@
 }
 
 @layer utilities {
+  @keyframes note-search-flash {
+    0% {
+      background-color: transparent;
+      box-shadow: 0 0 0 0 transparent;
+    }
+
+    30% {
+      background-color: rgb(254 243 199 / 0.95);
+      box-shadow: inset 0 0 0 1px rgb(245 158 11 / 0.65);
+    }
+
+    100% {
+      background-color: transparent;
+      box-shadow: 0 0 0 0 transparent;
+    }
+  }
+
+  .note-search-flash {
+    animation: note-search-flash 1.1s ease-out 1;
+  }
+
   .bg-activity-hover {
     background-color: hsl(var(--activity-hover));
   }

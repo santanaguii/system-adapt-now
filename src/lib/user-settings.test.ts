@@ -1,0 +1,16 @@
+import { describe, expect, it } from 'vitest';
+import { buildDefaultUserSettings } from './user-settings';
+
+describe('buildDefaultUserSettings', () => {
+  it('creates a complete settings row for new users', () => {
+    const settings = buildDefaultUserSettings('user-1');
+
+    expect(settings.user_id).toBe('user-1');
+    expect(settings.allow_reopen_completed).toBe(true);
+    expect(settings.autosave_enabled).toBe(true);
+    expect(settings.activity_creation_mode).toBe('simple');
+    expect(settings.mobile_layout_mode).toBe('mobile');
+    expect(settings.saved_filters).toEqual([]);
+    expect(settings.saved_sort).toEqual({ type: 'manual', direction: 'asc' });
+  });
+});

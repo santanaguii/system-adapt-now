@@ -119,7 +119,7 @@ export function Auth() {
     }
     
     setIsLoading(true);
-    const result = await resetPassword(forgotUsername, newPassword);
+    const result = await resetPassword(forgotUsername, securityAnswer, newPassword);
     if (!result.success) {
       setError(result.error || 'Erro ao redefinir senha');
       setIsLoading(false);

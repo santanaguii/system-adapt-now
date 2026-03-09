@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useTheme } from 'next-themes';
 import { supabase } from '@/integrations/supabase/client';
 import { FontFamily, FontSize, ColorTheme, ThemeMode, MobileLayoutMode, AppearanceSettings } from '@/types';
+import { upsertUserSettings } from '@/lib/user-settings';
 
 interface UserSettingsRow {
   font_family: string;
@@ -205,10 +206,11 @@ export function useAppearance(options: UseAppearanceOptions = {}) {
       if (updates.themeMode !== undefined) dbUpdates.theme_mode = updates.themeMode;
       if (updates.mobileLayoutMode !== undefined) dbUpdates.mobile_layout_mode = updates.mobileLayoutMode;
 
-      await supabase
-        .from('user_settings' as never)
-        .update(dbUpdates as never)
-        .eq('user_id', userId);
+      const { error } = await upsertUserSettings(userId, dbUpdates);
+
+      if (error) {
+        console.error('Error saving appearance:', error);
+      }
     } catch (error) {
       console.error('Error saving appearance:', error);
     }

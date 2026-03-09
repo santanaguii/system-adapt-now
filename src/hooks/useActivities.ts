@@ -1,9 +1,17 @@
-import { useCallback, useMemo, useState, useEffect } from 'react';
-import { Activity, SortOption, CustomField } from '@/types';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Activity, CustomField, SortOption } from '@/types';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuthContext } from '@/contexts/AuthContext';
+import { getPriorityValue } from './useActivities.utils';
+import {
+  ACTIVITY_META,
+  collectSearchableText,
+  createMetaPatch,
+  getRecurrence,
+  nextRecurrenceDate,
+} from '@/lib/activity-meta';
+import { getDateKeyInTimeZone } from '@/lib/date';
 
-// Type definition for external Supabase table
 interface ActivityRow {
   id: string;
   user_id: string;
@@ -19,64 +27,324 @@ interface ActivityRow {
   completed_at: string | null;
 }
 
+type PendingOperation =
+  | { type: 'add'; activity: Activity }
+  | { type: 'update'; id: string; updates: Partial<Activity> }
+  | { type: 'delete'; id: string }
+  | { type: 'reorder'; orderedIds: string[] };
+
+type SyncStatus = 'synced' | 'syncing' | 'pending' | 'offline';
+
+function pendingKey(userId: string) {
+  return `activities:pending:${userId}`;
+}
+
+function readPendingOperations(userId: string): PendingOperation[] {
+  try {
+    const raw = window.localStorage.getItem(pendingKey(userId));
+    return raw ? JSON.parse(raw) as PendingOperation[] : [];
+  } catch (error) {
+    console.error('Error reading pending activity operations:', error);
+    return [];
+  }
+}
+
+function writePendingOperations(userId: string, operations: PendingOperation[]) {
+  try {
+    window.localStorage.setItem(pendingKey(userId), JSON.stringify(operations));
+  } catch (error) {
+    console.error('Error writing pending activity operations:', error);
+  }
+}
+
+function toActivity(row: ActivityRow): Activity {
+  return {
+    id: row.id,
+    title: row.title,
+    description: row.description || undefined,
+    status: row.status as Activity['status'],
+    completed: row.completed,
+    tags: row.tags || [],
+    customFields: (row.custom_fields || {}) as Activity['customFields'],
+    order: row.sort_order,
+    createdAt: new Date(row.created_at),
+    updatedAt: new Date(row.updated_at),
+    completedAt: row.completed_at ? new Date(row.completed_at) : undefined,
+  };
+}
+
+function sortByOrder(items: Activity[]) {
+  return [...items].sort((a, b) => a.order - b.order);
+}
+
+function mergeActivityUpdate(activity: Activity, updates: Partial<Activity>) {
+  return {
+    ...activity,
+    ...updates,
+    customFields: updates.customFields
+      ? { ...activity.customFields, ...updates.customFields }
+      : activity.customFields,
+    updatedAt: updates.updatedAt || new Date(),
+  };
+}
+
+function applyOperation(items: Activity[], operation: PendingOperation) {
+  switch (operation.type) {
+    case 'add':
+      return [...items.filter((item) => item.id !== operation.activity.id), operation.activity];
+    case 'update':
+      return items.map((item) =>
+        item.id === operation.id ? mergeActivityUpdate(item, operation.updates) : item
+      );
+    case 'delete':
+      return items.filter((item) => item.id !== operation.id);
+    case 'reorder': {
+      const orderMap = new Map(operation.orderedIds.map((id, index) => [id, index]));
+      return items.map((item) =>
+        orderMap.has(item.id)
+          ? { ...item, order: orderMap.get(item.id) ?? item.order }
+          : item
+      );
+    }
+  }
+}
+
+function applyPendingOperations(items: Activity[], operations: PendingOperation[]) {
+  return operations.reduce((current, operation) => applyOperation(current, operation), items);
+}
+
 export function useActivities(sortOption: SortOption = 'manual', customFields: CustomField[] = []) {
   const { user, isAuthenticated } = useAuthContext();
   const [activities, setActivities] = useState<Activity[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isOffline, setIsOffline] = useState(typeof navigator !== 'undefined' ? !navigator.onLine : false);
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>('synced');
+  const pendingOperationsRef = useRef<PendingOperation[]>([]);
 
-  // Load activities from database
-  useEffect(() => {
-    if (!isAuthenticated || !user) {
+  const persistPending = useCallback((operations: PendingOperation[]) => {
+    pendingOperationsRef.current = operations;
+    if (user) {
+      writePendingOperations(user.id, operations);
+    }
+    setSyncStatus(
+      operations.length === 0
+        ? (isOffline ? 'offline' : 'synced')
+        : (isOffline ? 'offline' : 'pending')
+    );
+  }, [user, isOffline]);
+
+  const queueOperation = useCallback((operation: PendingOperation) => {
+    persistPending([...pendingOperationsRef.current, operation]);
+  }, [persistPending]);
+
+  const loadActivities = useCallback(async () => {
+    if (!user) {
       setActivities([]);
       setIsLoading(false);
       return;
     }
 
-    const loadActivities = async () => {
-      setIsLoading(true);
-      try {
-        const { data, error } = await supabase
-          .from('activities' as never)
-          .select('*')
-          .eq('user_id', user.id)
-          .order('sort_order') as { data: ActivityRow[] | null; error: unknown };
+    setIsLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('activities' as never)
+        .select('*')
+        .eq('user_id', user.id)
+        .order('sort_order') as { data: ActivityRow[] | null; error: unknown };
 
-        if (error) {
-          console.error('Error loading activities:', error);
-          setIsLoading(false);
-          return;
-        }
-
-        if (data) {
-          const loadedActivities: Activity[] = data.map(row => ({
-            id: row.id,
-            title: row.title,
-            description: row.description || undefined,
-            status: row.status as Activity['status'],
-            completed: row.completed,
-            tags: row.tags || [],
-            customFields: (row.custom_fields || {}) as Activity['customFields'],
-            order: row.sort_order,
-            createdAt: new Date(row.created_at),
-            updatedAt: new Date(row.updated_at),
-            completedAt: row.completed_at ? new Date(row.completed_at) : undefined,
-          }));
-          setActivities(loadedActivities);
-        }
-      } catch (error) {
+      if (error) {
         console.error('Error loading activities:', error);
-      } finally {
-        setIsLoading(false);
+        return;
       }
+
+      const remoteActivities = (data || []).map(toActivity);
+      const queued = readPendingOperations(user.id);
+      pendingOperationsRef.current = queued;
+      setActivities(sortByOrder(applyPendingOperations(remoteActivities, queued)));
+      setSyncStatus(
+        queued.length === 0
+          ? (isOffline ? 'offline' : 'synced')
+          : (isOffline ? 'offline' : 'pending')
+      );
+    } catch (error) {
+      console.error('Error loading activities:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [user, isOffline]);
+
+  const createRemoteActivity = useCallback(async (activity: Activity) => {
+    if (!user) {
+      throw new Error('Missing user');
+    }
+
+    const { error } = await supabase
+      .from('activities' as never)
+      .insert({
+        id: activity.id,
+        user_id: user.id,
+        title: activity.title,
+        description: activity.description || null,
+        status: activity.status,
+        completed: activity.completed,
+        tags: activity.tags,
+        custom_fields: activity.customFields,
+        sort_order: activity.order,
+        created_at: activity.createdAt.toISOString(),
+        updated_at: activity.updatedAt.toISOString(),
+        completed_at: activity.completedAt?.toISOString() || null,
+      } as never);
+
+    if (error) {
+      throw error;
+    }
+  }, [user]);
+
+  const updateRemoteActivity = useCallback(async (id: string, updates: Partial<Activity>) => {
+    if (!user) {
+      throw new Error('Missing user');
+    }
+
+    const dbUpdates: Partial<ActivityRow> = {
+      updated_at: new Date().toISOString(),
     };
 
-    loadActivities();
-  }, [isAuthenticated, user]);
+    if (updates.title !== undefined) dbUpdates.title = updates.title;
+    if (updates.description !== undefined) dbUpdates.description = updates.description || null;
+    if (updates.status !== undefined) dbUpdates.status = updates.status;
+    if (updates.completed !== undefined) dbUpdates.completed = updates.completed;
+    if (updates.tags !== undefined) dbUpdates.tags = updates.tags;
+    if (updates.customFields !== undefined) dbUpdates.custom_fields = updates.customFields as Record<string, unknown>;
+    if (updates.order !== undefined) dbUpdates.sort_order = updates.order;
+    if (updates.completedAt !== undefined) dbUpdates.completed_at = updates.completedAt?.toISOString() || null;
 
-  const addActivity = useCallback(async (title: string, initialTags?: string[]) => {
+    const { error } = await supabase
+      .from('activities' as never)
+      .update(dbUpdates as never)
+      .eq('id', id)
+      .eq('user_id', user.id);
+
+    if (error) {
+      throw error;
+    }
+  }, [user]);
+
+  const deleteRemoteActivity = useCallback(async (id: string) => {
+    if (!user) {
+      throw new Error('Missing user');
+    }
+
+    const { error } = await supabase
+      .from('activities' as never)
+      .delete()
+      .eq('id', id)
+      .eq('user_id', user.id);
+
+    if (error) {
+      throw error;
+    }
+  }, [user]);
+
+  const reorderRemoteActivities = useCallback(async (orderedIds: string[]) => {
+    if (!user) {
+      throw new Error('Missing user');
+    }
+
+    for (const [index, id] of orderedIds.entries()) {
+      const { error } = await supabase
+        .from('activities' as never)
+        .update({ sort_order: index } as never)
+        .eq('id', id)
+        .eq('user_id', user.id);
+
+      if (error) {
+        throw error;
+      }
+    }
+  }, [user]);
+
+  const flushPendingSync = useCallback(async () => {
+    if (!user || pendingOperationsRef.current.length === 0 || isOffline) {
+      return;
+    }
+
+    setSyncStatus('syncing');
+    const nextQueue: PendingOperation[] = [];
+
+    for (const operation of pendingOperationsRef.current) {
+      try {
+        if (operation.type === 'add') {
+          await createRemoteActivity(operation.activity);
+        } else if (operation.type === 'update') {
+          await updateRemoteActivity(operation.id, operation.updates);
+        } else if (operation.type === 'delete') {
+          await deleteRemoteActivity(operation.id);
+        } else if (operation.type === 'reorder') {
+          await reorderRemoteActivities(operation.orderedIds);
+        }
+      } catch (error) {
+        console.error('Error flushing activity operation:', error);
+        nextQueue.push(operation);
+      }
+    }
+
+    persistPending(nextQueue);
+    if (nextQueue.length === 0) {
+      await loadActivities();
+    }
+  }, [
+    user,
+    isOffline,
+    createRemoteActivity,
+    updateRemoteActivity,
+    deleteRemoteActivity,
+    reorderRemoteActivities,
+    persistPending,
+    loadActivities,
+  ]);
+
+  useEffect(() => {
+    if (!isAuthenticated || !user) {
+      setActivities([]);
+      setIsLoading(false);
+      setSyncStatus('synced');
+      return;
+    }
+
+    loadActivities();
+  }, [isAuthenticated, user, loadActivities]);
+
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOffline(false);
+    };
+    const handleOffline = () => {
+      setIsOffline(true);
+      setSyncStatus(pendingOperationsRef.current.length > 0 ? 'offline' : 'synced');
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isOffline) {
+      void flushPendingSync();
+    }
+  }, [isOffline, flushPendingSync]);
+
+  const addActivity = useCallback(async (
+    title: string,
+    initialTags?: string[],
+    initialCustomFields?: Activity['customFields']
+  ) => {
     if (!user) return null;
 
-    const defaultValues: Record<string, string | number | boolean | Date | string[] | null> = {};
+    const defaultValues: Activity['customFields'] = {};
     customFields.forEach((field) => {
       if (field.defaultValue !== undefined && field.defaultValue !== null) {
         defaultValues[field.id] = field.defaultValue;
@@ -89,197 +357,151 @@ export function useActivities(sortOption: SortOption = 'manual', customFields: C
       status: 'open',
       completed: false,
       tags: initialTags || [],
-      customFields: defaultValues,
-      order: activities.filter((a) => !a.completed).length,
+      customFields: {
+        ...defaultValues,
+        ...createMetaPatch({
+          [ACTIVITY_META.bucket]: 'inbox',
+        }),
+        ...(initialCustomFields || {}),
+      },
+      order: activities.filter((item) => !item.completed).length,
       createdAt: new Date(),
       updatedAt: new Date(),
     };
 
-    // Optimistic update
-    setActivities((prev) => [newActivity, ...prev]);
+    setActivities((prev) => sortByOrder([...prev, newActivity]));
+
+    if (isOffline) {
+      queueOperation({ type: 'add', activity: newActivity });
+      return newActivity;
+    }
 
     try {
-      const { error } = await supabase
-        .from('activities' as never)
-        .insert({
-          id: newActivity.id,
-          user_id: user.id,
-          title: newActivity.title,
-          status: newActivity.status,
-          completed: newActivity.completed,
-          tags: newActivity.tags,
-          custom_fields: newActivity.customFields,
-          sort_order: newActivity.order,
-          created_at: newActivity.createdAt.toISOString(),
-          updated_at: newActivity.updatedAt.toISOString(),
-        } as never);
-
-      if (error) {
-        console.error('Error adding activity:', error);
-        // Rollback
-        setActivities((prev) => prev.filter((a) => a.id !== newActivity.id));
-        return null;
-      }
-
+      await createRemoteActivity(newActivity);
+      setSyncStatus('synced');
       return newActivity;
     } catch (error) {
-      console.error('Error adding activity:', error);
-      setActivities((prev) => prev.filter((a) => a.id !== newActivity.id));
-      return null;
+      console.error('Error adding activity, queued for sync:', error);
+      queueOperation({ type: 'add', activity: newActivity });
+      return newActivity;
     }
-  }, [user, activities, customFields]);
+  }, [user, customFields, activities, isOffline, createRemoteActivity, queueOperation]);
 
   const updateActivity = useCallback(async (id: string, updates: Partial<Activity>) => {
-    if (!user) return;
+    const existing = activities.find((activity) => activity.id === id);
+    if (!existing) return;
 
-    // Optimistic update
+    const optimisticActivity = mergeActivityUpdate(existing, updates);
     setActivities((prev) =>
-      prev.map((activity) =>
-        activity.id === id
-          ? { ...activity, ...updates, updatedAt: new Date() }
-          : activity
-      )
+      prev.map((activity) => (activity.id === id ? optimisticActivity : activity))
     );
 
-    try {
-      // Convert to DB format
-      const dbUpdates: Partial<ActivityRow> = {
-        updated_at: new Date().toISOString(),
-      };
-      
-      if (updates.title !== undefined) dbUpdates.title = updates.title;
-      if (updates.description !== undefined) dbUpdates.description = updates.description || null;
-      if (updates.status !== undefined) dbUpdates.status = updates.status;
-      if (updates.completed !== undefined) dbUpdates.completed = updates.completed;
-      if (updates.tags !== undefined) dbUpdates.tags = updates.tags;
-      if (updates.customFields !== undefined) dbUpdates.custom_fields = updates.customFields as Record<string, unknown>;
-      if (updates.order !== undefined) dbUpdates.sort_order = updates.order;
-      if (updates.completedAt !== undefined) dbUpdates.completed_at = updates.completedAt?.toISOString() || null;
-
-      const { error } = await supabase
-        .from('activities' as never)
-        .update(dbUpdates as never)
-        .eq('id', id)
-        .eq('user_id', user.id);
-
-      if (error) {
-        console.error('Error updating activity:', error);
-      }
-    } catch (error) {
-      console.error('Error updating activity:', error);
+    if (isOffline) {
+      queueOperation({ type: 'update', id, updates });
+      return;
     }
-  }, [user]);
+
+    try {
+      await updateRemoteActivity(id, updates);
+      setSyncStatus('synced');
+    } catch (error) {
+      console.error('Error updating activity, queued for sync:', error);
+      queueOperation({ type: 'update', id, updates });
+    }
+  }, [activities, isOffline, queueOperation, updateRemoteActivity]);
 
   const deleteActivity = useCallback(async (id: string) => {
-    if (!user) return;
-
-    // Keep for potential rollback
-    const deletedActivity = activities.find((a) => a.id === id);
-
-    // Optimistic update
     setActivities((prev) => prev.filter((activity) => activity.id !== id));
 
-    try {
-      const { error } = await supabase
-        .from('activities' as never)
-        .delete()
-        .eq('id', id)
-        .eq('user_id', user.id);
-
-      if (error) {
-        console.error('Error deleting activity:', error);
-        // Rollback
-        if (deletedActivity) {
-          setActivities((prev) => [...prev, deletedActivity]);
-        }
-      }
-    } catch (error) {
-      console.error('Error deleting activity:', error);
-      if (deletedActivity) {
-        setActivities((prev) => [...prev, deletedActivity]);
-      }
+    if (isOffline) {
+      queueOperation({ type: 'delete', id });
+      return;
     }
-  }, [user, activities]);
+
+    try {
+      await deleteRemoteActivity(id);
+      setSyncStatus('synced');
+    } catch (error) {
+      console.error('Error deleting activity, queued for sync:', error);
+      queueOperation({ type: 'delete', id });
+    }
+  }, [isOffline, queueOperation, deleteRemoteActivity]);
 
   const toggleComplete = useCallback(async (id: string) => {
-    if (!user) return;
-
-    const activity = activities.find((a) => a.id === id);
+    const activity = activities.find((item) => item.id === id);
     if (!activity) return;
 
     const completed = !activity.completed;
     const updates: Partial<Activity> = {
       completed,
-      status: completed ? 'done' as const : 'open' as const,
+      status: completed ? 'done' : 'open',
       completedAt: completed ? new Date() : undefined,
       updatedAt: new Date(),
     };
 
-    // Optimistic update
-    setActivities((prev) =>
-      prev.map((a) => (a.id === id ? { ...a, ...updates } as Activity : a))
-    );
+    await updateActivity(id, updates);
 
-    try {
-      const { error } = await supabase
-        .from('activities' as never)
-        .update({
-          completed,
-          status: updates.status,
-          completed_at: completed ? new Date().toISOString() : null,
-          updated_at: new Date().toISOString(),
-        } as never)
-        .eq('id', id)
-        .eq('user_id', user.id);
+    if (completed) {
+      const recurrence = getRecurrence(activity);
+      const recurrenceBaseDate = typeof activity.customFields.dueDate === 'string'
+        ? activity.customFields.dueDate as string
+        : typeof activity.customFields[ACTIVITY_META.scheduledDate] === 'string'
+          ? activity.customFields[ACTIVITY_META.scheduledDate] as string
+        : getDateKeyInTimeZone();
 
-      if (error) {
-        console.error('Error toggling complete:', error);
+      if (recurrence) {
+        const nextDate = nextRecurrenceDate(recurrenceBaseDate, recurrence);
+        await addActivity(activity.title, activity.tags, {
+          ...activity.customFields,
+          dueDate: nextDate,
+          [ACTIVITY_META.bucket]: 'upcoming',
+          [ACTIVITY_META.scheduledDate]: nextDate,
+          [ACTIVITY_META.recurrence]: {
+            ...recurrence,
+            lastGeneratedAt: new Date().toISOString(),
+            nextDate,
+          },
+        });
       }
-    } catch (error) {
-      console.error('Error toggling complete:', error);
     }
-  }, [user, activities]);
+  }, [activities, updateActivity, addActivity]);
 
   const reorderActivities = useCallback(async (startIndex: number, endIndex: number) => {
-    if (!user) return;
+    const activeActivities = activities.filter((activity) => !activity.completed);
+    const completedActivities = activities.filter((activity) => activity.completed);
 
-    // Get active activities only
-    const activeActivities = activities.filter((a) => !a.completed);
-    const completedActivities = activities.filter((a) => a.completed);
+    const nextActive = [...activeActivities];
+    const [removed] = nextActive.splice(startIndex, 1);
+    nextActive.splice(endIndex, 0, removed);
 
-    const [removed] = activeActivities.splice(startIndex, 1);
-    activeActivities.splice(endIndex, 0, removed);
+    const reorderedActive = nextActive.map((activity, index) => ({ ...activity, order: index }));
+    const nextActivities = [...reorderedActive, ...completedActivities];
+    const orderedIds = reorderedActive.map((activity) => activity.id);
 
-    const reorderedActive = activeActivities.map((a, index) => ({
-      ...a,
-      order: index,
-    }));
+    setActivities(nextActivities);
 
-    // Optimistic update
-    setActivities([...reorderedActive, ...completedActivities]);
-
-    // Update in database
-    try {
-      for (let i = 0; i < reorderedActive.length; i++) {
-        await supabase
-          .from('activities' as never)
-          .update({ sort_order: i } as never)
-          .eq('id', reorderedActive[i].id)
-          .eq('user_id', user.id);
-      }
-    } catch (error) {
-      console.error('Error reordering activities:', error);
+    if (isOffline) {
+      queueOperation({ type: 'reorder', orderedIds });
+      return;
     }
-  }, [user, activities]);
+
+    try {
+      await reorderRemoteActivities(orderedIds);
+      setSyncStatus('synced');
+    } catch (error) {
+      console.error('Error reordering activities, queued for sync:', error);
+      queueOperation({ type: 'reorder', orderedIds });
+    }
+  }, [activities, isOffline, queueOperation, reorderRemoteActivities]);
 
   const sortActivities = useCallback((activitiesToSort: Activity[], sort: SortOption): Activity[] => {
     const sorted = [...activitiesToSort];
-    
+
     switch (sort) {
       case 'dueDate_asc':
         return sorted.sort((a, b) => {
-          const dateA = a.customFields.dueDate as string | null;
-          const dateB = b.customFields.dueDate as string | null;
+          const dateA = typeof a.customFields.dueDate === 'string' ? a.customFields.dueDate : null;
+          const dateB = typeof b.customFields.dueDate === 'string' ? b.customFields.dueDate : null;
           if (!dateA && !dateB) return 0;
           if (!dateA) return 1;
           if (!dateB) return -1;
@@ -287,33 +509,23 @@ export function useActivities(sortOption: SortOption = 'manual', customFields: C
         });
       case 'dueDate_desc':
         return sorted.sort((a, b) => {
-          const dateA = a.customFields.dueDate as string | null;
-          const dateB = b.customFields.dueDate as string | null;
+          const dateA = typeof a.customFields.dueDate === 'string' ? a.customFields.dueDate : null;
+          const dateB = typeof b.customFields.dueDate === 'string' ? b.customFields.dueDate : null;
           if (!dateA && !dateB) return 0;
           if (!dateA) return 1;
           if (!dateB) return -1;
           return new Date(dateB).getTime() - new Date(dateA).getTime();
         });
       case 'priority_asc':
-        const priorityOrderAsc = { 'Alta': 1, 'Média': 2, 'Baixa': 3 };
-        return sorted.sort((a, b) => {
-          const prioA = (a.customFields.priority as string) || '';
-          const prioB = (b.customFields.priority as string) || '';
-          return (priorityOrderAsc[prioA as keyof typeof priorityOrderAsc] || 4) - 
-                 (priorityOrderAsc[prioB as keyof typeof priorityOrderAsc] || 4);
-        });
-      case 'priority_desc':
-        const priorityOrderDesc = { 'Baixa': 1, 'Média': 2, 'Alta': 3 };
-        return sorted.sort((a, b) => {
-          const prioA = (a.customFields.priority as string) || '';
-          const prioB = (b.customFields.priority as string) || '';
-          return (priorityOrderDesc[prioA as keyof typeof priorityOrderDesc] || 4) - 
-                 (priorityOrderDesc[prioB as keyof typeof priorityOrderDesc] || 4);
-        });
-      case 'createdAt_desc':
-        return sorted.sort((a, b) => 
-          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        return sorted.sort(
+          (a, b) => getPriorityValue(b.customFields.priority) - getPriorityValue(a.customFields.priority)
         );
+      case 'priority_desc':
+        return sorted.sort(
+          (a, b) => getPriorityValue(a.customFields.priority) - getPriorityValue(b.customFields.priority)
+        );
+      case 'createdAt_desc':
+        return sorted.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
       case 'manual':
       default:
         return sorted.sort((a, b) => a.order - b.order);
@@ -321,14 +533,13 @@ export function useActivities(sortOption: SortOption = 'manual', customFields: C
   }, []);
 
   const sortedActivities = useMemo(() => {
-    const active = activities.filter((a) => !a.completed);
-    const completed = activities.filter((a) => a.completed);
+    const active = activities.filter((activity) => !activity.completed);
+    const completed = activities.filter((activity) => activity.completed);
 
     return {
       active: sortActivities(active, sortOption),
-      completed: completed.sort((a, b) => 
-        new Date(b.completedAt || b.updatedAt).getTime() - 
-        new Date(a.completedAt || a.updatedAt).getTime()
+      completed: completed.sort(
+        (a, b) => new Date(b.completedAt || b.updatedAt).getTime() - new Date(a.completedAt || a.updatedAt).getTime()
       ),
     };
   }, [activities, sortOption, sortActivities]);
@@ -336,19 +547,23 @@ export function useActivities(sortOption: SortOption = 'manual', customFields: C
   const searchActivities = useCallback((query: string) => {
     if (!query.trim()) return activities;
     const lowerQuery = query.toLowerCase();
-    return activities.filter((a) => {
-      if (a.title.toLowerCase().includes(lowerQuery)) return true;
-      if (a.description?.toLowerCase().includes(lowerQuery)) return true;
-      for (const value of Object.values(a.customFields)) {
-        if (typeof value === 'string' && value.toLowerCase().includes(lowerQuery)) return true;
-      }
-      return false;
+    return activities.filter((activity) => {
+      const haystack = [
+        activity.title,
+        activity.description || '',
+        ...Object.values(activity.customFields).flatMap((value) => collectSearchableText(value)),
+      ].join(' ').toLowerCase();
+
+      return haystack.includes(lowerQuery);
     });
   }, [activities]);
 
   return {
     activities,
     isLoading,
+    isOffline,
+    syncStatus,
+    pendingSyncCount: pendingOperationsRef.current.length,
     sortedActivities,
     addActivity,
     updateActivity,
@@ -356,5 +571,7 @@ export function useActivities(sortOption: SortOption = 'manual', customFields: C
     toggleComplete,
     reorderActivities,
     searchActivities,
+    flushPendingSync,
+    refreshActivities: loadActivities,
   };
 }

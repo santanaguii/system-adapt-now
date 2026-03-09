@@ -1,14 +1,10 @@
-import { useState, useCallback } from 'react';
+import { Suspense, lazy, useMemo, useState } from 'react';
 import { Activity, Tag, CustomField, SortOption, ActivityCreationMode, ActivityListDisplaySettings, FilterConfig } from '@/types';
 import { ActivityItem } from './ActivityItem';
-import { ActivityDetail } from './ActivityDetail';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { 
-  Plus, Filter, Settings, ChevronDown, ChevronUp, Search, 
-  ArrowUpDown, Tag as TagIcon
-} from 'lucide-react';
+import { Plus, Filter, Settings, ChevronDown, ChevronUp, Search, ArrowUpDown, Tag as TagIcon, CalendarClock, FolderKanban, Inbox, LoaderCircle } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
   DropdownMenu,
@@ -30,15 +26,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from '@/components/ui/dialog';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   DndContext,
@@ -56,6 +43,28 @@ import {
   useSortable,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+import {
+  ACTIVITY_META,
+  buildDependencySyncUpdates,
+  collectSearchableText,
+  createMetaPatch,
+  deriveProjects,
+  getActivityBucket,
+  getBlockedBy,
+  getProjectName,
+  getScheduledDate,
+  shouldShowInToday,
+} from '@/lib/activity-meta';
+import { addDaysToDateKey, endOfMonthDateKey, getDateKeyInTimeZone } from '@/lib/date';
+
+const ActivityDetail = lazy(() =>
+  import('./ActivityDetail').then((module) => ({ default: module.ActivityDetail }))
+);
+const ActivityCreateDialog = lazy(() =>
+  import('./ActivityCreateDialog').then((module) => ({ default: module.ActivityCreateDialog }))
+);
+
+type ActivityViewMode = 'all' | 'today' | 'week' | 'month' | 'backlog' | 'waiting' | 'projects';
 
 interface ActivityListProps {
   activities: { active: Activity[]; completed: Activity[] };
@@ -63,7 +72,7 @@ interface ActivityListProps {
   customFields: CustomField[];
   listDisplay: ActivityListDisplaySettings;
   savedFilters: FilterConfig[];
-  onAdd: (title: string, tags?: string[]) => Promise<Activity | null> | Activity | null;
+  onAdd: (title: string, tags?: string[], customFields?: Activity['customFields']) => Promise<Activity | null> | Activity | null;
   onUpdate: (id: string, updates: Partial<Activity>) => void;
   onDelete: (id: string) => void;
   onToggleComplete: (id: string) => void;
@@ -85,6 +94,7 @@ function SortableActivityItem({
   onDelete,
   onDoubleClick,
   allowReopen,
+  quickActions,
 }: {
   activity: Activity;
   tags: Tag[];
@@ -95,24 +105,16 @@ function SortableActivityItem({
   onDelete: (id: string) => void;
   onDoubleClick: (activity: Activity) => void;
   allowReopen: boolean;
+  quickActions?: React.ReactNode;
 }) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: activity.id });
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-  };
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: activity.id });
 
   return (
-    <div ref={setNodeRef} style={style} {...attributes}>
+    <div
+      ref={setNodeRef}
+      style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 }}
+      {...attributes}
+    >
       <ActivityItem
         activity={activity}
         tags={tags}
@@ -124,9 +126,15 @@ function SortableActivityItem({
         onDoubleClick={onDoubleClick}
         dragHandleProps={listeners}
         allowReopen={allowReopen}
+        quickActions={quickActions}
       />
     </div>
   );
+}
+
+function getRelevantDate(activity: Activity) {
+  const dueDate = typeof activity.customFields.dueDate === 'string' ? activity.customFields.dueDate : null;
+  return dueDate || getScheduledDate(activity);
 }
 
 export function ActivityList({
@@ -156,104 +164,62 @@ export function ActivityList({
   const [showNewActivityDialog, setShowNewActivityDialog] = useState(false);
   const [newActivityTags, setNewActivityTags] = useState<string[]>([]);
   const [newActivityFields, setNewActivityFields] = useState<Record<string, unknown>>({});
+  const [viewMode, setViewMode] = useState<ActivityViewMode>('all');
+  const [selectedProject, setSelectedProject] = useState<string>('all');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const todayKey = getDateKeyInTimeZone();
+  const tomorrowKey = addDaysToDateKey(todayKey, 1);
+  const nextWeekKey = addDaysToDateKey(todayKey, 7);
+  const monthEndKey = endOfMonthDateKey(todayKey);
+  const projectNames = useMemo(() => deriveProjects(activities.active), [activities.active]);
+  const allActivities = useMemo(() => [...activities.active, ...activities.completed], [activities.active, activities.completed]);
 
   const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: {
-        distance: 8,
-      },
-    }),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
-    })
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
-  const handleAddActivitySimple = () => {
-    if (newActivityTitle.trim()) {
-      onAdd(newActivityTitle.trim(), newActivityTags.length > 0 ? newActivityTags : undefined);
-      setNewActivityTitle('');
-      setNewActivityTags([]);
+  const getCreationDefaults = () => {
+    if (viewMode === 'today') {
+      return { dueDate: todayKey, ...createMetaPatch({ [ACTIVITY_META.bucket]: 'today' }) };
     }
+    if (viewMode === 'week' || viewMode === 'month') {
+      return { dueDate: tomorrowKey, ...createMetaPatch({ [ACTIVITY_META.bucket]: 'upcoming' }) };
+    }
+    if (viewMode === 'backlog') {
+      return { dueDate: null, ...createMetaPatch({ [ACTIVITY_META.bucket]: 'someday' }) };
+    }
+    return createMetaPatch({ [ACTIVITY_META.bucket]: 'inbox' });
   };
 
-  const handleAddActivityDetailed = async () => {
-    if (newActivityTitle.trim()) {
-      const newActivity = await onAdd(newActivityTitle.trim(), newActivityTags.length > 0 ? newActivityTags : undefined);
-      if (newActivity && Object.keys(newActivityFields).length > 0) {
-        onUpdate(newActivity.id, { customFields: newActivityFields as Activity['customFields'] });
-      }
-      setNewActivityTitle('');
-      setNewActivityFields({});
-      setNewActivityTags([]);
-      setShowNewActivityDialog(false);
-    }
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      if (activityCreationMode === 'simple') {
-        handleAddActivitySimple();
-      } else {
-        if (newActivityTitle.trim()) {
-          setShowNewActivityDialog(true);
-        }
-      }
-    }
-  };
-
-  const handlePlusClick = () => {
-    if (activityCreationMode === 'simple') {
-      handleAddActivitySimple();
-    } else {
-      if (newActivityTitle.trim()) {
-        setShowNewActivityDialog(true);
-      }
-    }
+  const handleAddActivitySimple = async () => {
+    if (!newActivityTitle.trim()) return;
+    setIsSubmitting(true);
+    await onAdd(newActivityTitle.trim(), newActivityTags.length > 0 ? newActivityTags : undefined, getCreationDefaults());
+    setNewActivityTitle('');
+    setNewActivityTags([]);
+    setIsSubmitting(false);
   };
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     if (over && active.id !== over.id) {
-      const oldIndex = activities.active.findIndex((a) => a.id === active.id);
-      const newIndex = activities.active.findIndex((a) => a.id === over.id);
+      const oldIndex = activities.active.findIndex((activity) => activity.id === active.id);
+      const newIndex = activities.active.findIndex((activity) => activity.id === over.id);
       if (oldIndex !== -1 && newIndex !== -1) {
         onReorder(oldIndex, newIndex);
       }
     }
   };
 
-  const toggleTagFilter = useCallback((tagId: string) => {
-    setSelectedTags((prev) =>
-      prev.includes(tagId) ? prev.filter((id) => id !== tagId) : [...prev, tagId]
-    );
-  }, []);
-
-  const toggleNewActivityTag = useCallback((tagId: string) => {
-    setNewActivityTags((prev) =>
-      prev.includes(tagId) ? prev.filter((id) => id !== tagId) : [...prev, tagId]
-    );
-  }, []);
-
-  const handleDeleteConfirm = (id: string) => {
-    setDeleteConfirm(id);
-  };
-
-  const handleDeleteExecute = () => {
-    if (deleteConfirm) {
-      onDelete(deleteConfirm);
-      setDeleteConfirm(null);
-    }
-  };
-
-  // Apply saved filters helper
   const applyFilter = (activity: Activity, filter: FilterConfig): boolean => {
     if (filter.type === 'tag' && filter.tagId) {
       return activity.tags.includes(filter.tagId);
     }
-    
+
     if (filter.type === 'field' && filter.fieldId) {
       const fieldValue = activity.customFields[filter.fieldId];
-      
       switch (filter.operator) {
         case 'isEmpty':
           return fieldValue === null || fieldValue === undefined || fieldValue === '';
@@ -272,52 +238,86 @@ export function ActivityList({
         case 'lte':
           return typeof fieldValue === 'number' && typeof filter.value === 'number' && fieldValue <= filter.value;
         case 'between':
-          return typeof fieldValue === 'number' && 
-                 typeof filter.value === 'number' && 
-                 typeof filter.value2 === 'number' &&
-                 fieldValue >= filter.value && fieldValue <= filter.value2;
+          return typeof fieldValue === 'number' && typeof filter.value === 'number' && typeof filter.value2 === 'number' && fieldValue >= filter.value && fieldValue <= filter.value2;
         default:
           return true;
       }
     }
-    
+
     return true;
   };
 
-  // Filter activities
+  const matchesView = (activity: Activity) => {
+    const relevantDate = getRelevantDate(activity);
+    const bucket = getActivityBucket(activity);
+    const blockedBy = getBlockedBy(activity);
+    const project = getProjectName(activity);
+
+    switch (viewMode) {
+      case 'today':
+        return shouldShowInToday(activity, todayKey);
+      case 'week':
+        return Boolean(relevantDate) && relevantDate >= todayKey && relevantDate <= nextWeekKey;
+      case 'month':
+        return Boolean(relevantDate) && relevantDate >= todayKey && relevantDate <= monthEndKey;
+      case 'backlog':
+        return bucket === 'someday' || bucket === 'inbox' || (!relevantDate && !blockedBy);
+      case 'waiting':
+        return Boolean(blockedBy);
+      case 'projects':
+        return selectedProject === 'all' ? Boolean(project) : project === selectedProject;
+      case 'all':
+      default:
+        return true;
+    }
+  };
+
   const filterActivities = (items: Activity[]) => {
-    let filtered = items;
-    
-    // Apply saved filters
-    if (savedFilters && savedFilters.length > 0) {
-      filtered = filtered.filter((activity) => 
-        savedFilters.every((filter) => applyFilter(activity, filter))
-      );
+    let filtered = items.filter(matchesView);
+
+    if (savedFilters.length > 0) {
+      filtered = filtered.filter((activity) => savedFilters.every((filter) => applyFilter(activity, filter)));
     }
-    
-    // Filter by manually selected tags (dropdown filter)
+
     if (selectedTags.length > 0) {
-      filtered = filtered.filter((a) => a.tags.some((t) => selectedTags.includes(t)));
+      filtered = filtered.filter((activity) => activity.tags.some((tagId) => selectedTags.includes(tagId)));
     }
-    
-    // Filter by search query
+
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
-      filtered = filtered.filter((a) => {
-        if (a.title.toLowerCase().includes(query)) return true;
-        if (a.description?.toLowerCase().includes(query)) return true;
-        for (const value of Object.values(a.customFields)) {
-          if (typeof value === 'string' && value.toLowerCase().includes(query)) return true;
-        }
-        return false;
+      filtered = filtered.filter((activity) => {
+        const haystack = [
+          activity.title,
+          activity.description || '',
+          ...Object.values(activity.customFields).flatMap((value) => collectSearchableText(value)),
+        ].join(' ').toLowerCase();
+        return haystack.includes(query);
       });
     }
-    
+
     return filtered;
   };
 
   const filteredActive = filterActivities(activities.active);
   const filteredCompleted = filterActivities(activities.completed);
+  const listFields = customFields.filter((field) => field.enabled && (field.display === 'list' || field.display === 'both'));
+  const canDrag = viewMode === 'all' && selectedTags.length === 0 && !searchQuery.trim() && savedFilters.length === 0;
+
+  const waitingCount = activities.active.filter((activity) => Boolean(getBlockedBy(activity))).length;
+  const backlogCount = activities.active.filter((activity) => {
+    const relevantDate = getRelevantDate(activity);
+    const blockedBy = getBlockedBy(activity);
+    const bucket = getActivityBucket(activity);
+    return bucket === 'someday' || bucket === 'inbox' || (!relevantDate && !blockedBy);
+  }).length;
+
+  const viewOptions: Array<{ id: ActivityViewMode; label: string; count: number; icon: typeof Inbox }> = [
+    { id: 'all', label: 'Todas', count: activities.active.length, icon: Inbox },
+    { id: 'today', label: 'Hoje', count: activities.active.filter((activity) => shouldShowInToday(activity, todayKey)).length, icon: CalendarClock },
+    { id: 'week', label: 'Semana', count: activities.active.filter((activity) => { const relevantDate = getRelevantDate(activity); return Boolean(relevantDate) && relevantDate >= todayKey && relevantDate <= nextWeekKey; }).length, icon: CalendarClock },
+    { id: 'month', label: 'Mes', count: activities.active.filter((activity) => { const relevantDate = getRelevantDate(activity); return Boolean(relevantDate) && relevantDate >= todayKey && relevantDate <= monthEndKey; }).length, icon: CalendarClock },
+    { id: 'backlog', label: 'S/data', count: backlogCount, icon: Inbox },
+  ];
 
   const sortLabels: Record<SortOption, string> = {
     manual: 'Manual',
@@ -330,121 +330,241 @@ export function ActivityList({
     field: 'Por Campo',
   };
 
-  const listFields = customFields.filter((f) => f.enabled && (f.display === 'list' || f.display === 'both'));
+  const quickActions = (activity: Activity) => (
+    <>
+      <Button
+        size="sm"
+        variant="outline"
+        className="h-7 px-2 text-xs"
+        onClick={(event) => {
+          event.stopPropagation();
+          onUpdate(activity.id, { customFields: { dueDate: todayKey, ...createMetaPatch({ [ACTIVITY_META.bucket]: 'today' }) } });
+        }}
+        onDoubleClick={(event) => event.stopPropagation()}
+      >
+        Hoje
+      </Button>
+      <Button
+        size="sm"
+        variant="outline"
+        className="h-7 px-2 text-xs"
+        onClick={(event) => {
+          event.stopPropagation();
+          onUpdate(activity.id, { customFields: { dueDate: tomorrowKey, ...createMetaPatch({ [ACTIVITY_META.bucket]: 'upcoming' }) } });
+        }}
+        onDoubleClick={(event) => event.stopPropagation()}
+      >
+        Amanha
+      </Button>
+      <Button
+        size="sm"
+        variant="outline"
+        className="h-7 px-2 text-xs"
+        onClick={(event) => {
+          event.stopPropagation();
+          onUpdate(activity.id, { customFields: { dueDate: nextWeekKey, ...createMetaPatch({ [ACTIVITY_META.bucket]: 'upcoming' }) } });
+        }}
+        onDoubleClick={(event) => event.stopPropagation()}
+      >
+        +7 dias
+      </Button>
+      <Button
+        size="sm"
+        variant="outline"
+        className="h-7 px-2 text-xs"
+        onClick={(event) => {
+          event.stopPropagation();
+          onUpdate(activity.id, { customFields: { dueDate: null, ...createMetaPatch({ [ACTIVITY_META.bucket]: 'someday' }) } });
+        }}
+        onDoubleClick={(event) => event.stopPropagation()}
+      >
+        S/data
+      </Button>
+    </>
+  );
+
+  const shouldShowQuickDateActions = (activity: Activity) => {
+    const relevantDate = getRelevantDate(activity);
+    return !relevantDate || relevantDate <= todayKey;
+  };
+
+  const syncDependencies = (currentActivityId: string, previousCustomFields: Activity['customFields'], nextCustomFields: Activity['customFields']) => {
+    const relatedUpdates = buildDependencySyncUpdates({
+      activities: allActivities,
+      currentActivityId,
+      previousCustomFields,
+      nextCustomFields,
+    });
+
+    relatedUpdates.forEach((update) => {
+      onUpdate(update.id, { customFields: update.customFields });
+    });
+  };
+
+  const renderActivity = (activity: Activity, sortable = false) => {
+    if (sortable) {
+      return (
+        <SortableActivityItem
+          key={activity.id}
+          activity={activity}
+          tags={tags}
+          customFields={listFields}
+          listDisplay={listDisplay}
+          onToggleComplete={onToggleComplete}
+          onUpdate={onUpdate}
+          onDelete={setDeleteConfirm}
+          onDoubleClick={setSelectedActivity}
+          allowReopen={allowReopenCompleted}
+          quickActions={shouldShowQuickDateActions(activity) ? quickActions(activity) : undefined}
+        />
+      );
+    }
+
+    return (
+      <ActivityItem
+        key={activity.id}
+        activity={activity}
+        tags={tags}
+        customFields={listFields}
+        listDisplay={listDisplay}
+        onToggleComplete={onToggleComplete}
+        onUpdate={onUpdate}
+        onDelete={setDeleteConfirm}
+        onDoubleClick={setSelectedActivity}
+        allowReopen={allowReopenCompleted}
+        quickActions={shouldShowQuickDateActions(activity) ? quickActions(activity) : undefined}
+      />
+    );
+  };
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b">
-        <h2 className="text-lg font-semibold">Atividades</h2>
-        <div className="flex items-center gap-1">
-          <Button 
-            variant="ghost" 
-            size="icon" 
-            className="h-8 w-8"
-            onClick={() => setIsSearching(!isSearching)}
-          >
-            <Search className="h-4 w-4" />
-          </Button>
-          
-          {/* Sort dropdown */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-8 w-8">
-                <ArrowUpDown className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuLabel>Ordenar por</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuRadioGroup value={sortOption} onValueChange={(v) => onSortChange(v as SortOption)}>
-                {Object.entries(sortLabels).map(([value, label]) => (
-                  <DropdownMenuRadioItem key={value} value={value}>
-                    {label}
-                  </DropdownMenuRadioItem>
+    <div className="flex h-full min-h-0 flex-col overflow-hidden">
+      <div className="shrink-0 border-b px-4 py-3">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold">Atividades</h2>
+          <div className="flex items-center gap-1">
+            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setIsSearching((prev) => !prev)}>
+              <Search className="h-4 w-4" />
+            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-8 w-8">
+                  <ArrowUpDown className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuLabel>Ordenar por</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuRadioGroup value={sortOption} onValueChange={(value) => onSortChange(value as SortOption)}>
+                  {Object.entries(sortLabels).map(([value, label]) => (
+                    <DropdownMenuRadioItem key={value} value={value}>
+                      {label}
+                    </DropdownMenuRadioItem>
+                  ))}
+                </DropdownMenuRadioGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-8 w-8">
+                  <Filter className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuLabel>Filtrar por tags</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {tags.map((tag) => (
+                  <DropdownMenuCheckboxItem
+                    key={tag.id}
+                    checked={selectedTags.includes(tag.id)}
+                    onCheckedChange={() =>
+                      setSelectedTags((prev) => (prev.includes(tag.id) ? prev.filter((id) => id !== tag.id) : [...prev, tag.id]))
+                    }
+                  >
+                    <span className="mr-2 h-2 w-2 rounded-full" style={{ backgroundColor: tag.color }} />
+                    {tag.name}
+                  </DropdownMenuCheckboxItem>
                 ))}
-              </DropdownMenuRadioGroup>
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          {/* Filter dropdown */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-8 w-8">
-                <Filter className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuLabel>Filtrar por tags</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              {tags.map((tag) => (
-                <DropdownMenuCheckboxItem
-                  key={tag.id}
-                  checked={selectedTags.includes(tag.id)}
-                  onCheckedChange={() => toggleTagFilter(tag.id)}
-                >
-                  <span
-                    className="w-2 h-2 rounded-full mr-2"
-                    style={{ backgroundColor: tag.color }}
-                  />
-                  {tag.name}
-                </DropdownMenuCheckboxItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-          
-          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onOpenSettings}>
-            <Settings className="h-4 w-4" />
-          </Button>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onOpenSettings}>
+              <Settings className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
+
+        <div className="mt-3 flex flex-wrap gap-2">
+          {viewOptions.map((option) => {
+            const Icon = option.icon;
+            return (
+              <Button key={option.id} variant={viewMode === option.id ? 'default' : 'outline'} size="sm" onClick={() => setViewMode(option.id)}>
+                <Icon className="mr-2 h-4 w-4" />
+                {option.label}
+                <Badge variant="secondary" className="ml-2">{option.count}</Badge>
+              </Button>
+            );
+          })}
+        </div>
+
+        {viewMode === 'projects' && (
+          <div className="mt-3">
+            <Select value={selectedProject} onValueChange={setSelectedProject}>
+              <SelectTrigger className="h-9">
+                <SelectValue placeholder="Todos os projetos" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos os projetos</SelectItem>
+                {projectNames.map((project) => (
+                  <SelectItem key={project} value={project}>
+                    {project}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
       </div>
 
-      {/* Search bar */}
       {isSearching && (
-        <div className="px-4 py-2 border-b">
-          <Input
-            placeholder="Buscar atividades..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="h-8"
-            autoFocus
-          />
+        <div className="shrink-0 border-b px-4 py-2">
+          <Input placeholder="Buscar atividades, projetos, bloqueios..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="h-8" autoFocus />
         </div>
       )}
 
-      {/* Filter badges */}
       {selectedTags.length > 0 && (
-        <div className="flex flex-wrap gap-1 px-4 py-2 border-b">
+        <div className="shrink-0 flex flex-wrap gap-1 border-b px-4 py-2">
           {selectedTags.map((tagId) => {
-            const tag = tags.find((t) => t.id === tagId);
+            const tag = tags.find((item) => item.id === tagId);
             if (!tag) return null;
             return (
               <Badge
                 key={tagId}
                 variant="secondary"
                 className="cursor-pointer"
-                onClick={() => toggleTagFilter(tagId)}
+                onClick={() => setSelectedTags((prev) => prev.filter((id) => id !== tagId))}
                 style={{ backgroundColor: `${tag.color}20`, color: tag.color }}
               >
-                {tag.name} ×
+                {tag.name} x
               </Badge>
             );
           })}
         </div>
       )}
 
-      {/* Add activity input - only show in simple mode */}
       {activityCreationMode === 'simple' ? (
-        <div className="flex flex-col gap-2 px-4 py-3 border-b">
+        <div className="shrink-0 flex flex-col gap-2 border-b px-4 py-3">
           <div className="flex items-center gap-2">
             <Input
               placeholder="Nova atividade..."
               value={newActivityTitle}
               onChange={(e) => setNewActivityTitle(e.target.value)}
-              onKeyDown={handleKeyDown}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  void handleAddActivitySimple();
+                }
+              }}
               className="flex-1"
             />
-            {/* Tag selector popover */}
             <Popover>
               <PopoverTrigger asChild>
                 <Button variant="outline" size="icon" className="shrink-0">
@@ -458,94 +578,88 @@ export function ActivityList({
                     {tags.length > 0 ? tags.map((tag) => (
                       <Badge
                         key={tag.id}
-                        variant={newActivityTags.includes(tag.id) ? "default" : "outline"}
+                        variant={newActivityTags.includes(tag.id) ? 'default' : 'outline'}
                         className="cursor-pointer transition-colors"
-                        onClick={() => toggleNewActivityTag(tag.id)}
+                        onClick={() => setNewActivityTags((prev) => (prev.includes(tag.id) ? prev.filter((id) => id !== tag.id) : [...prev, tag.id]))}
                         style={{
                           backgroundColor: newActivityTags.includes(tag.id) ? tag.color : 'transparent',
                           borderColor: tag.color,
-                          color: newActivityTags.includes(tag.id) ? 'white' : tag.color
+                          color: newActivityTags.includes(tag.id) ? 'white' : tag.color,
                         }}
                       >
                         {tag.name}
                       </Badge>
                     )) : (
-                      <span className="text-sm text-muted-foreground">
-                        Nenhuma tag disponível
-                      </span>
+                      <span className="text-sm text-muted-foreground">Nenhuma tag disponivel</span>
                     )}
                   </div>
                 </div>
               </PopoverContent>
             </Popover>
-            <Button size="icon" onClick={handlePlusClick} disabled={!newActivityTitle.trim()}>
+            <Button size="icon" onClick={() => void handleAddActivitySimple()} disabled={!newActivityTitle.trim() || isSubmitting}>
               <Plus className="h-4 w-4" />
             </Button>
           </div>
-          {/* Selected tags display */}
-          {newActivityTags.length > 0 && (
-            <div className="flex flex-wrap gap-1">
-              {newActivityTags.map((tagId) => {
-                const tag = tags.find(t => t.id === tagId);
-                if (!tag) return null;
-                return (
-                  <Badge
-                    key={tagId}
-                    style={{ backgroundColor: tag.color }}
-                    className="text-white text-xs"
-                  >
-                    {tag.name}
-                  </Badge>
-                );
-              })}
-            </div>
-          )}
+          <div className="flex flex-wrap gap-1 text-xs text-muted-foreground">
+            <span className="rounded-full border px-2 py-1">Nova tarefa entra em: {viewOptions.find((option) => option.id === viewMode)?.label}</span>
+            {selectedProject !== 'all' && <span className="rounded-full border px-2 py-1">Projeto: {selectedProject}</span>}
+          </div>
         </div>
       ) : (
-        <div className="flex items-center justify-center px-4 py-3 border-b">
+        <div className="shrink-0 flex items-center justify-center border-b px-4 py-3">
           <Button onClick={() => setShowNewActivityDialog(true)} className="w-full">
-            <Plus className="h-4 w-4 mr-2" />
+            <Plus className="mr-2 h-4 w-4" />
             Nova Atividade
           </Button>
         </div>
       )}
 
-      {/* Activity list */}
-      <div className="flex-1 overflow-y-auto px-2 py-2">
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-          <SortableContext items={filteredActive.map((a) => a.id)} strategy={verticalListSortingStrategy}>
-            {filteredActive.map((activity) => (
-              <SortableActivityItem
-                key={activity.id}
-                activity={activity}
-                tags={tags}
-                customFields={listFields}
-                listDisplay={listDisplay}
-                onToggleComplete={onToggleComplete}
-                onUpdate={onUpdate}
-                onDelete={handleDeleteConfirm}
-                onDoubleClick={setSelectedActivity}
-                allowReopen={allowReopenCompleted}
-              />
-            ))}
-          </SortableContext>
-        </DndContext>
-
-        {filteredActive.length === 0 && (
-          <div className="text-center text-muted-foreground py-8">
-            {searchQuery ? 'Nenhuma atividade encontrada' : 'Nenhuma atividade pendente'}
+      <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2">
+        {viewMode === 'projects' && selectedProject === 'all' ? (
+          <div className="space-y-4">
+            {projectNames.length === 0 ? (
+              <div className="py-8 text-center text-muted-foreground">Nenhum projeto associado ainda.</div>
+            ) : (
+              projectNames.map((project) => {
+                const projectActivities = filteredActive.filter((activity) => getProjectName(activity) === project);
+                if (projectActivities.length === 0) return null;
+                return (
+                  <div key={project} className="space-y-2">
+                    <div className="sticky top-0 z-10 rounded-md bg-background/95 px-3 py-2 text-sm font-semibold backdrop-blur">
+                      {project} <span className="text-muted-foreground">({projectActivities.length})</span>
+                    </div>
+                    {projectActivities.map((activity) => renderActivity(activity))}
+                  </div>
+                );
+              })
+            )}
+          </div>
+        ) : canDrag ? (
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+            <SortableContext items={filteredActive.map((activity) => activity.id)} strategy={verticalListSortingStrategy}>
+              {filteredActive.map((activity) => renderActivity(activity, true))}
+            </SortableContext>
+          </DndContext>
+        ) : (
+          <div className="space-y-1">
+            {filteredActive.map((activity) => renderActivity(activity))}
           </div>
         )}
 
-        {/* Completed section */}
+        {filteredActive.length === 0 && (
+          <div className="py-8 text-center text-muted-foreground">
+            {searchQuery ? 'Nenhuma atividade encontrada' : 'Nenhuma atividade neste recorte'}
+          </div>
+        )}
+
         {filteredCompleted.length > 0 && (
           <div className="mt-4">
             <button
-              className="flex items-center gap-2 px-3 py-2 text-sm text-muted-foreground hover:text-foreground transition-colors w-full"
-              onClick={() => setShowCompleted(!showCompleted)}
+              className="flex w-full items-center gap-2 px-3 py-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
+              onClick={() => setShowCompleted((prev) => !prev)}
             >
               {showCompleted ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
-              Concluídas ({filteredCompleted.length})
+              Concluidas ({filteredCompleted.length})
             </button>
             {showCompleted && (
               <div className="space-y-1">
@@ -558,7 +672,7 @@ export function ActivityList({
                     listDisplay={listDisplay}
                     onToggleComplete={onToggleComplete}
                     onUpdate={onUpdate}
-                    onDelete={handleDeleteConfirm}
+                    onDelete={setDeleteConfirm}
                     onDoubleClick={setSelectedActivity}
                     allowReopen={allowReopenCompleted}
                   />
@@ -569,133 +683,81 @@ export function ActivityList({
         )}
       </div>
 
-      {/* Activity detail modal */}
       {selectedActivity && (
-        <ActivityDetail
-          activity={selectedActivity}
-          tags={tags}
-          customFields={customFields.filter((f) => f.enabled && (f.display === 'detail' || f.display === 'both'))}
-          onUpdate={onUpdate}
-          onClose={() => setSelectedActivity(null)}
-          isReadOnly={selectedActivity.completed}
-        />
+        <Suspense fallback={null}>
+          <ActivityDetail
+            activity={selectedActivity}
+            activities={allActivities}
+            tags={tags}
+            customFields={customFields.filter((field) => field.enabled && (field.display === 'detail' || field.display === 'both'))}
+            formLayout={listDisplay.formLayout}
+            onSave={async (activityId, payload) => {
+              onUpdate(activityId, {
+                title: payload.title,
+                tags: payload.tags,
+                customFields: payload.customFields,
+              });
+              syncDependencies(activityId, selectedActivity.customFields, payload.customFields);
+            }}
+            onClose={() => setSelectedActivity(null)}
+            isReadOnly={selectedActivity.completed}
+          />
+        </Suspense>
       )}
 
-      {/* Delete confirmation dialog */}
       <AlertDialog open={!!deleteConfirm} onOpenChange={() => setDeleteConfirm(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Excluir atividade?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Esta ação não pode ser desfeita. A atividade será permanentemente removida.
-            </AlertDialogDescription>
+            <AlertDialogDescription>Esta acao nao pode ser desfeita. A atividade sera permanentemente removida.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDeleteExecute} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+            <AlertDialogAction
+              onClick={() => {
+                if (deleteConfirm) {
+                  onDelete(deleteConfirm);
+                  setDeleteConfirm(null);
+                }
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
               Excluir
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* New activity detailed dialog */}
-      <Dialog open={showNewActivityDialog} onOpenChange={setShowNewActivityDialog}>
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Nova Atividade</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label>Título</Label>
-              <Input 
-                value={newActivityTitle} 
-                onChange={(e) => setNewActivityTitle(e.target.value)}
-                placeholder="Nome da atividade"
-              />
-            </div>
-            
-            {/* Tags section */}
-            <div className="space-y-2">
-              <Label>Tags</Label>
-              <div className="flex flex-wrap gap-2">
-                {tags.length > 0 ? tags.map((tag) => (
-                  <Badge
-                    key={tag.id}
-                    variant={newActivityTags.includes(tag.id) ? "default" : "outline"}
-                    className="cursor-pointer transition-colors"
-                    onClick={() => toggleNewActivityTag(tag.id)}
-                    style={{
-                      backgroundColor: newActivityTags.includes(tag.id) ? tag.color : 'transparent',
-                      borderColor: tag.color,
-                      color: newActivityTags.includes(tag.id) ? 'white' : tag.color
-                    }}
-                  >
-                    {tag.name}
-                  </Badge>
-                )) : (
-                  <span className="text-sm text-muted-foreground">
-                    Nenhuma tag disponível. Crie tags nas configurações.
-                  </span>
-                )}
-              </div>
-            </div>
-            {customFields.filter(f => f.enabled).map((field) => (
-              <div key={field.id} className="space-y-2">
-                <Label>{field.name}{field.required && ' *'}</Label>
-                {field.type === 'text' && (
-                  <Input
-                    value={(newActivityFields[field.id] as string) || ''}
-                    onChange={(e) => setNewActivityFields(prev => ({ ...prev, [field.id]: e.target.value }))}
-                  />
-                )}
-                {field.type === 'long_text' && (
-                  <Textarea
-                    value={(newActivityFields[field.id] as string) || ''}
-                    onChange={(e) => setNewActivityFields(prev => ({ ...prev, [field.id]: e.target.value }))}
-                    rows={3}
-                  />
-                )}
-                {field.type === 'date' && (
-                  <Input
-                    type="date"
-                    value={(newActivityFields[field.id] as string) || ''}
-                    onChange={(e) => setNewActivityFields(prev => ({ ...prev, [field.id]: e.target.value }))}
-                  />
-                )}
-                {field.type === 'number' && (
-                  <Input
-                    type="number"
-                    value={(newActivityFields[field.id] as number) || ''}
-                    onChange={(e) => setNewActivityFields(prev => ({ ...prev, [field.id]: parseFloat(e.target.value) }))}
-                  />
-                )}
-                {field.type === 'single_select' && field.options && (
-                  <Select
-                    value={(newActivityFields[field.id] as string) || ''}
-                    onValueChange={(v) => setNewActivityFields(prev => ({ ...prev, [field.id]: v }))}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder={`Selecione ${field.name.toLowerCase()}`} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {field.options.map((opt) => (
-                        <SelectItem key={opt} value={opt}>{opt}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                )}
-              </div>
-            ))}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowNewActivityDialog(false)}>Cancelar</Button>
-            <Button onClick={handleAddActivityDetailed} disabled={!newActivityTitle.trim()}>
-              Criar Atividade
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <Suspense fallback={null}>
+        <ActivityCreateDialog
+          isOpen={showNewActivityDialog}
+          onOpenChange={setShowNewActivityDialog}
+          activities={allActivities}
+          tags={tags}
+          customFields={customFields}
+          formLayout={listDisplay.formLayout}
+          initialTitle={newActivityTitle}
+          initialTags={newActivityTags}
+          initialCustomFields={newActivityFields as Activity['customFields']}
+          onSubmit={async ({ title, tags: selectedDialogTags, customFields: dialogFields }) => {
+            setNewActivityTitle(title);
+            setNewActivityTags(selectedDialogTags);
+            setNewActivityFields(dialogFields);
+            const nextCustomFields = {
+              ...getCreationDefaults(),
+              ...dialogFields,
+            };
+            const createdActivity = await onAdd(title, selectedDialogTags.length > 0 ? selectedDialogTags : undefined, nextCustomFields);
+            if (createdActivity) {
+              syncDependencies(createdActivity.id, {}, nextCustomFields);
+            }
+            setNewActivityTitle('');
+            setNewActivityTags([]);
+            setNewActivityFields({});
+            setShowNewActivityDialog(false);
+          }}
+        />
+      </Suspense>
     </div>
   );
 }

@@ -1,16 +1,35 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { DailyNote, NoteLine, LineType } from '@/types';
+import { DailyNote, NoteLine, LineType, NoteTemplate } from '@/types';
 import { NoteLine as NoteLineComponent } from './NoteLine';
-import { NotesList } from './NotesList';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { CalendarIcon, ChevronLeft, ChevronRight, Undo2, Redo2, Loader2, Check, AlertCircle, Save, MessageSquare, MessageSquareOff } from 'lucide-react';
+import {
+  CalendarIcon,
+  ChevronLeft,
+  ChevronRight,
+  FileStack,
+  Heading1,
+  Heading2,
+  List,
+  Loader2,
+  MessageSquare,
+  MessageSquareOff,
+  Quote,
+  Redo2,
+  Save,
+  Type,
+  Undo2,
+  Check,
+  AlertCircle,
+  Link2,
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { SaveStatus } from '@/hooks/useNotes';
+import { applyLineMarkdownShortcut, createNoteTemplate, getNextLineType, normalizePastedLines } from './note-editor.utils';
+
 interface NoteEditorProps {
   currentDate: Date;
   note: DailyNote;
@@ -20,8 +39,6 @@ interface NoteEditorProps {
   onDeleteLine: (lineId: string) => void;
   onToggleCollapse: (lineId: string) => void;
   onUpdateIndent: (lineId: string, delta: number) => void;
-  onSearch: (query: string) => DailyNote[];
-  allDatesWithNotes: string[];
   saveStatus: SaveStatus;
   hasUnsavedChanges: boolean;
   autosaveEnabled: boolean;
@@ -30,7 +47,14 @@ interface NoteEditorProps {
   onRedo: () => void;
   canUndo: boolean;
   canRedo: boolean;
+  onCreateActivityFromLine?: (line: NoteLine) => void;
+  onOpenDetailedActivityFromLine?: (line: NoteLine) => void;
+  activityCreatedLineIds?: string[];
+  highlightedLineIds?: string[];
+  searchFocusKey?: string | null;
+  noteTemplates?: NoteTemplate[];
 }
+
 export function NoteEditor({
   currentDate,
   note,
@@ -40,8 +64,6 @@ export function NoteEditor({
   onDeleteLine,
   onToggleCollapse,
   onUpdateIndent,
-  onSearch,
-  allDatesWithNotes,
   saveStatus,
   hasUnsavedChanges,
   autosaveEnabled,
@@ -49,67 +71,101 @@ export function NoteEditor({
   onUndo,
   onRedo,
   canUndo,
-  canRedo
+  canRedo,
+  onCreateActivityFromLine,
+  onOpenDetailedActivityFromLine,
+  activityCreatedLineIds = [],
+  highlightedLineIds = [],
+  searchFocusKey = null,
+  noteTemplates = [],
 }: NoteEditorProps) {
-  const [isSearching, setIsSearching] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<DailyNote[]>([]);
   const [focusedLineId, setFocusedLineId] = useState<string | null>(null);
-  const [showNotesList, setShowNotesList] = useState(false);
-  const [highlightTerms, setHighlightTerms] = useState<string[]>([]);
+  const [selectedLineIds, setSelectedLineIds] = useState<string[]>([]);
+  const [selectionAnchorId, setSelectionAnchorId] = useState<string | null>(null);
+  const [selectionRequest, setSelectionRequest] = useState<{ lineId: string; start: number; end: number; key: number } | null>(null);
   const [hideComments, setHideComments] = useState(false);
   const editorRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (searchQuery.trim()) {
-      const results = onSearch(searchQuery);
-      setSearchResults(results);
-      setHighlightTerms(searchQuery.trim().split(/\s+/));
-    } else {
-      setSearchResults([]);
-      setHighlightTerms([]);
-    }
-  }, [searchQuery, onSearch]);
 
-  // Global keyboard shortcuts for undo/redo
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
         e.preventDefault();
         onUndo();
-      } else if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || e.key === 'z' && e.shiftKey)) {
+      } else if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) {
         e.preventDefault();
         onRedo();
       }
     };
+
     window.addEventListener('keydown', handleGlobalKeyDown);
     return () => window.removeEventListener('keydown', handleGlobalKeyDown);
   }, [onUndo, onRedo]);
+
+  useEffect(() => {
+    const handleCopySelection = async (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 'c' || selectedLineIds.length <= 1) {
+        return;
+      }
+
+      const orderedLines = note.lines.filter((line) => selectedLineIds.includes(line.id));
+      const text = orderedLines.map((line) => line.content).join('\n');
+      if (!text.trim()) {
+        return;
+      }
+
+      event.preventDefault();
+      try {
+        await navigator.clipboard.writeText(text);
+      } catch (error) {
+        console.error('Error copying note lines:', error);
+      }
+    };
+
+    window.addEventListener('keydown', handleCopySelection);
+    return () => window.removeEventListener('keydown', handleCopySelection);
+  }, [note.lines, selectedLineIds]);
+
+  useEffect(() => {
+    if (!searchFocusKey || highlightedLineIds.length === 0) {
+      return;
+    }
+
+    const primaryMatchId = highlightedLineIds[0];
+    if (!primaryMatchId) {
+      return;
+    }
+
+    requestAnimationFrame(() => {
+      const target = editorRef.current?.querySelector<HTMLElement>(`[data-note-line-id="${primaryMatchId}"]`);
+      target?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    });
+  }, [highlightedLineIds, searchFocusKey]);
+
   const handlePrevDay = () => {
     const newDate = new Date(currentDate);
     newDate.setDate(newDate.getDate() - 1);
     onDateChange(newDate);
   };
+
   const handleNextDay = () => {
     const newDate = new Date(currentDate);
     newDate.setDate(newDate.getDate() + 1);
     onDateChange(newDate);
   };
 
-  // Calculate visible lines based on collapse state
   const getVisibleLines = useCallback(() => {
     const lines = note.lines;
     const visibleLines: NoteLine[] = [];
     let skipUntilLevel: number | null = null;
+
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
       const lineLevel = line.type === 'title' ? 1 : line.type === 'subtitle' ? 2 : 3;
 
-      // If hiding comments, skip comment lines
       if (hideComments && line.type === 'comment') {
         continue;
       }
 
-      // If we're skipping, check if we should stop
       if (skipUntilLevel !== null) {
         if (lineLevel <= skipUntilLevel) {
           skipUntilLevel = null;
@@ -117,165 +173,385 @@ export function NoteEditor({
           continue;
         }
       }
+
       visibleLines.push(line);
 
-      // If this line is collapsed, skip children
       if (line.collapsed && (line.type === 'title' || line.type === 'subtitle')) {
         skipUntilLevel = lineLevel;
       }
     }
+
     return visibleLines;
   }, [note.lines, hideComments]);
+
   const visibleLines = getVisibleLines();
+  const focusedLine = focusedLineId ? note.lines.find((line) => line.id === focusedLineId) || null : null;
+
+  const focusLineAt = useCallback((lineId: string, start: number, end = start) => {
+    setFocusedLineId(lineId);
+    setSelectionRequest({
+      lineId,
+      start,
+      end,
+      key: Date.now() + Math.random(),
+    });
+  }, []);
+
+  const handleJoinWithPrevious = useCallback((lineId: string) => {
+    const lineIndex = note.lines.findIndex((line) => line.id === lineId);
+    if (lineIndex <= 0) {
+      return false;
+    }
+
+    const previousLine = note.lines[lineIndex - 1];
+    const currentLine = note.lines[lineIndex];
+    const cursorPosition = previousLine.content.length;
+    onUpdateLine(previousLine.id, { content: `${previousLine.content}${currentLine.content}` });
+    onDeleteLine(currentLine.id);
+    setSelectedLineIds([]);
+    focusLineAt(previousLine.id, cursorPosition);
+    return true;
+  }, [focusLineAt, note.lines, onDeleteLine, onUpdateLine]);
+
+  const handleJoinWithNext = useCallback((lineId: string) => {
+    const lineIndex = note.lines.findIndex((line) => line.id === lineId);
+    if (lineIndex < 0 || lineIndex >= note.lines.length - 1) {
+      return false;
+    }
+
+    const currentLine = note.lines[lineIndex];
+    const nextLine = note.lines[lineIndex + 1];
+    const cursorPosition = currentLine.content.length;
+    onUpdateLine(currentLine.id, { content: `${currentLine.content}${nextLine.content}` });
+    onDeleteLine(nextLine.id);
+    setSelectedLineIds([]);
+    focusLineAt(currentLine.id, cursorPosition);
+    return true;
+  }, [focusLineAt, note.lines, onDeleteLine, onUpdateLine]);
+
+  const handleSelectionRange = useCallback((targetLineId: string, direction: 'up' | 'down') => {
+    const anchorId = selectionAnchorId || focusedLineId || targetLineId;
+    const anchorIndex = visibleLines.findIndex((line) => line.id === anchorId);
+    const currentIndex = visibleLines.findIndex((line) => line.id === targetLineId);
+    const nextIndex = direction === 'up' ? Math.max(0, currentIndex - 1) : Math.min(visibleLines.length - 1, currentIndex + 1);
+    const rangeStart = Math.min(anchorIndex, nextIndex);
+    const rangeEnd = Math.max(anchorIndex, nextIndex);
+    const ids = visibleLines.slice(rangeStart, rangeEnd + 1).map((line) => line.id);
+    setSelectionAnchorId(anchorId);
+    setSelectedLineIds(ids);
+    focusLineAt(visibleLines[nextIndex].id, direction === 'up' ? 0 : visibleLines[nextIndex].content.length);
+  }, [focusLineAt, focusedLineId, selectionAnchorId, visibleLines]);
+
+  const handleLineMouseDown = useCallback((lineId: string, event: React.MouseEvent) => {
+    if (event.shiftKey) {
+      event.preventDefault();
+      const anchorId = selectionAnchorId || focusedLineId || lineId;
+      const anchorIndex = visibleLines.findIndex((line) => line.id === anchorId);
+      const targetIndex = visibleLines.findIndex((line) => line.id === lineId);
+      if (anchorIndex < 0 || targetIndex < 0) {
+        return;
+      }
+      const ids = visibleLines
+        .slice(Math.min(anchorIndex, targetIndex), Math.max(anchorIndex, targetIndex) + 1)
+        .map((line) => line.id);
+      setSelectionAnchorId(anchorId);
+      setSelectedLineIds(ids);
+      focusLineAt(lineId, 0, visibleLines[targetIndex].content.length);
+      return;
+    }
+
+    if (event.ctrlKey || event.metaKey) {
+      event.preventDefault();
+      setSelectionAnchorId(lineId);
+      setSelectedLineIds((prev) => prev.includes(lineId) ? prev.filter((id) => id !== lineId) : [...prev, lineId]);
+      focusLineAt(lineId, 0, visibleLines.find((line) => line.id === lineId)?.content.length ?? 0);
+      return;
+    }
+
+    if (selectedLineIds.length > 1) {
+      setSelectedLineIds([]);
+      setSelectionAnchorId(null);
+    }
+  }, [focusLineAt, focusedLineId, selectedLineIds.length, selectionAnchorId, visibleLines]);
+
+  const handleApplyType = useCallback((type: LineType) => {
+    if (!focusedLineId) {
+      return;
+    }
+
+    onUpdateLine(focusedLineId, { type });
+  }, [focusedLineId, onUpdateLine]);
+
+  const handleInsertStructuredLines = useCallback((anchorId: string | undefined, lines: Array<Pick<NoteLine, 'content' | 'type'>>) => {
+    if (lines.length === 0) {
+      return;
+    }
+
+    const anchorLine = anchorId ? note.lines.find((line) => line.id === anchorId) : null;
+
+    if (anchorLine && anchorLine.content.trim() === '' && anchorLine.type === 'paragraph') {
+      onUpdateLine(anchorLine.id, { content: lines[0].content, type: lines[0].type });
+      let nextAnchor = anchorLine.id;
+
+      lines.slice(1).forEach((line) => {
+        const newLineId = onAddLine(nextAnchor, line.type);
+        onUpdateLine(newLineId, { content: line.content, type: line.type });
+        nextAnchor = newLineId;
+      });
+
+      setFocusedLineId(nextAnchor);
+      return;
+    }
+
+    let nextAnchor = anchorId;
+    lines.forEach((line) => {
+      const newLineId = onAddLine(nextAnchor, line.type);
+      onUpdateLine(newLineId, { content: line.content, type: line.type });
+      nextAnchor = newLineId;
+    });
+
+    if (nextAnchor) {
+      setFocusedLineId(nextAnchor);
+    }
+  }, [note.lines, onAddLine, onUpdateLine]);
+
+  const handleInsertTemplate = useCallback((templateId: string) => {
+    const templateLines = createNoteTemplate(templateId, noteTemplates);
+    const anchorId = focusedLineId || note.lines[note.lines.length - 1]?.id;
+    handleInsertStructuredLines(anchorId, templateLines);
+  }, [focusedLineId, handleInsertStructuredLines, note.lines, noteTemplates]);
+
+  const handlePasteText = useCallback((lineId: string, text: string) => {
+    const normalizedLines = normalizePastedLines(text);
+    if (normalizedLines.length === 0) {
+      return;
+    }
+
+    onUpdateLine(lineId, normalizedLines[0]);
+    let anchorId = lineId;
+    normalizedLines.slice(1).forEach((line) => {
+      const newLineId = onAddLine(anchorId, line.type);
+      onUpdateLine(newLineId, { content: line.content, type: line.type });
+      anchorId = newLineId;
+    });
+    setFocusedLineId(anchorId);
+  }, [onAddLine, onUpdateLine]);
+
   const handleKeyDown = useCallback((lineId: string, e: React.KeyboardEvent) => {
     const allLines = note.lines;
-    const lineIndex = allLines.findIndex(l => l.id === lineId);
+    const lineIndex = allLines.findIndex((line) => line.id === lineId);
     const line = allLines[lineIndex];
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (!line) {
+      return;
+    }
+
+    const target = e.currentTarget as HTMLTextAreaElement;
+    const caretAtStart = target.selectionStart === 0 && target.selectionEnd === 0;
+    const caretAtEnd = target.selectionStart === target.value.length && target.selectionEnd === target.value.length;
+    const hasRangeSelection = target.selectionStart !== target.selectionEnd;
+
+    if (e.key === 'Escape') {
+      setSelectedLineIds([]);
+      setSelectionAnchorId(null);
+      return;
+    }
+
+    if (e.shiftKey && e.key === 'ArrowUp') {
       e.preventDefault();
-      const newLineId = onAddLine(lineId, 'paragraph');
-      setTimeout(() => setFocusedLineId(newLineId), 0);
-    } else if (e.key === 'Backspace' && line.content === '' && allLines.length > 1) {
+      handleSelectionRange(lineId, 'up');
+      return;
+    }
+
+    if (e.shiftKey && e.key === 'ArrowDown') {
       e.preventDefault();
-      const visibleIndex = visibleLines.findIndex(l => l.id === lineId);
-      const prevVisibleLine = visibleLines[visibleIndex - 1];
-      if (prevVisibleLine) {
-        setFocusedLineId(prevVisibleLine.id);
-      }
-      onDeleteLine(lineId);
-    } else if (e.key === 'ArrowUp') {
-      const visibleIndex = visibleLines.findIndex(l => l.id === lineId);
-      if (visibleIndex > 0) {
-        setFocusedLineId(visibleLines[visibleIndex - 1].id);
-      }
-    } else if (e.key === 'ArrowDown') {
-      const visibleIndex = visibleLines.findIndex(l => l.id === lineId);
-      if (visibleIndex < visibleLines.length - 1) {
-        setFocusedLineId(visibleLines[visibleIndex + 1].id);
-      }
-    } else if (e.key === 'Tab') {
+      handleSelectionRange(lineId, 'down');
+      return;
+    }
+
+    if ((e.key === 'Backspace' || e.key === 'Delete') && selectedLineIds.length > 1 && selectedLineIds.includes(lineId)) {
       e.preventDefault();
-      if (e.shiftKey) {
-        onUpdateIndent(lineId, -1);
-      } else {
-        onUpdateIndent(lineId, 1);
+      const remainingLines = note.lines.filter((candidate) => !selectedLineIds.includes(candidate.id));
+      selectedLineIds.forEach((selectedId) => onDeleteLine(selectedId));
+      setSelectedLineIds([]);
+      setSelectionAnchorId(null);
+      if (remainingLines[0]) {
+        focusLineAt(remainingLines[0].id, remainingLines[0].content.length);
+      }
+      return;
+    }
+
+    if (e.key === ' ' && !hasRangeSelection) {
+      const shortcut = applyLineMarkdownShortcut(line.content);
+      if (shortcut) {
+        const prefixMatch = line.content.match(/^\s*(##|\/\/|#|-|\*|>)/);
+        const prefixLength = prefixMatch ? prefixMatch[0].length : -1;
+        if (target.selectionStart === prefixLength && target.selectionEnd === prefixLength) {
+          e.preventDefault();
+          onUpdateLine(lineId, shortcut);
+          return;
+        }
       }
     }
 
-    // Line type shortcuts
+    if (e.key === 'Enter') {
+      e.preventDefault();
+
+      if (!line.content.trim() && line.type !== 'paragraph') {
+        onUpdateLine(lineId, { type: 'paragraph' });
+        return;
+      }
+
+      const before = line.content.slice(0, target.selectionStart);
+      const after = line.content.slice(target.selectionEnd);
+      const nextType = hasRangeSelection || target.selectionStart < line.content.length
+        ? line.type
+        : getNextLineType(line.type, line.content);
+
+      onUpdateLine(lineId, { content: before });
+      const newLineId = onAddLine(lineId, nextType);
+      onUpdateLine(newLineId, { content: after, type: nextType });
+      setSelectedLineIds([]);
+      setSelectionAnchorId(null);
+      focusLineAt(newLineId, 0);
+      return;
+    }
+
+    if (e.key === 'Backspace' && caretAtStart && !hasRangeSelection) {
+      if (!line.content && line.type !== 'paragraph') {
+        e.preventDefault();
+        onUpdateLine(lineId, { type: 'paragraph' });
+        return;
+      }
+
+      if (allLines.length > 1) {
+        e.preventDefault();
+        handleJoinWithPrevious(lineId);
+        return;
+      }
+    }
+
+    if (e.key === 'Delete' && caretAtEnd && !hasRangeSelection) {
+      if (allLines.length > 1) {
+        e.preventDefault();
+        handleJoinWithNext(lineId);
+        return;
+      }
+    }
+
+    if (e.key === 'ArrowUp' && caretAtStart) {
+      const visibleIndex = visibleLines.findIndex((visibleLine) => visibleLine.id === lineId);
+      if (visibleIndex > 0) {
+        e.preventDefault();
+        setSelectedLineIds([]);
+        setSelectionAnchorId(null);
+        focusLineAt(visibleLines[visibleIndex - 1].id, visibleLines[visibleIndex - 1].content.length);
+      }
+    }
+
+    if (e.key === 'ArrowDown' && caretAtEnd) {
+      const visibleIndex = visibleLines.findIndex((visibleLine) => visibleLine.id === lineId);
+      if (visibleIndex < visibleLines.length - 1) {
+        e.preventDefault();
+        setSelectedLineIds([]);
+        setSelectionAnchorId(null);
+        focusLineAt(visibleLines[visibleIndex + 1].id, 0);
+      }
+    }
+
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      onUpdateIndent(lineId, e.shiftKey ? -1 : 1);
+    }
+
     if (e.ctrlKey || e.metaKey) {
       switch (e.key) {
         case '1':
           e.preventDefault();
-          onUpdateLine(lineId, {
-            type: 'title'
-          });
+          onUpdateLine(lineId, { type: 'title' });
           break;
         case '2':
           e.preventDefault();
-          onUpdateLine(lineId, {
-            type: 'subtitle'
-          });
+          onUpdateLine(lineId, { type: 'subtitle' });
           break;
         case '3':
           e.preventDefault();
-          onUpdateLine(lineId, {
-            type: 'quote'
-          });
+          onUpdateLine(lineId, { type: 'quote' });
           break;
         case '4':
           e.preventDefault();
-          onUpdateLine(lineId, {
-            type: 'bullet'
-          });
+          onUpdateLine(lineId, { type: 'bullet' });
           break;
         case '0':
           e.preventDefault();
-          onUpdateLine(lineId, {
-            type: 'paragraph'
-          });
+          onUpdateLine(lineId, { type: 'paragraph' });
           break;
         case '5':
           e.preventDefault();
-          onUpdateLine(lineId, {
-            type: 'comment'
-          });
+          onUpdateLine(lineId, { type: 'comment' });
+          break;
+        default:
           break;
       }
     }
-  }, [note.lines, visibleLines, onAddLine, onDeleteLine, onUpdateLine, onUpdateIndent]);
+  }, [focusLineAt, handleJoinWithNext, handleJoinWithPrevious, handleSelectionRange, note.lines, onAddLine, onDeleteLine, onUpdateIndent, onUpdateLine, selectedLineIds, visibleLines]);
+
   const isToday = format(currentDate, 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd');
+
   const renderSaveStatus = () => {
     if (!autosaveEnabled) {
       if (saveStatus === 'saving') {
-        return <span className="flex items-center gap-1 text-muted-foreground">
-            <Loader2 className="h-3 w-3 animate-spin" />
-            Salvando...
-          </span>;
+        return <span className="flex items-center gap-1 text-muted-foreground"><Loader2 className="h-3 w-3 animate-spin" />Salvando...</span>;
       }
       if (saveStatus === 'saved') {
-        return <span className="flex items-center gap-1 text-green-600">
-            <Check className="h-3 w-3" />
-            Salvo
-          </span>;
+        return <span className="flex items-center gap-1 text-green-600"><Check className="h-3 w-3" />Salvo</span>;
       }
       if (saveStatus === 'error') {
-        return <span className="flex items-center gap-1 text-destructive">
-            <AlertCircle className="h-3 w-3" />
-            Erro ao salvar
-          </span>;
+        return <span className="flex items-center gap-1 text-destructive"><AlertCircle className="h-3 w-3" />Erro ao salvar</span>;
       }
       if (hasUnsavedChanges) {
-        return <span className="flex items-center gap-2">
-            <span className="text-amber-600 dark:text-amber-400">● Alterações não salvas</span>
+        return (
+          <span className="flex items-center gap-2">
+            <span className="text-amber-600 dark:text-amber-400">Alteracoes nao salvas</span>
             <Button variant="outline" size="sm" className="h-6 text-xs" onClick={onSave}>
-              <Save className="h-3 w-3 mr-1" />
+              <Save className="mr-1 h-3 w-3" />
               Salvar (Ctrl+S)
             </Button>
-          </span>;
+          </span>
+        );
       }
       return <span className="text-muted-foreground">Salvamento manual</span>;
     }
 
     switch (saveStatus) {
       case 'saving':
-        return <span className="flex items-center gap-1 text-muted-foreground">
-            <Loader2 className="h-3 w-3 animate-spin" />
-            Salvando...
-          </span>;
+        return <span className="flex items-center gap-1 text-muted-foreground"><Loader2 className="h-3 w-3 animate-spin" />Salvando...</span>;
       case 'saved':
-        return <span className="flex items-center gap-1 text-green-600">
-            <Check className="h-3 w-3" />
-            Salvo
-          </span>;
+        return <span className="flex items-center gap-1 text-green-600"><Check className="h-3 w-3" />Salvo</span>;
       case 'error':
-        return <span className="flex items-center gap-1 text-destructive">
-            <AlertCircle className="h-3 w-3" />
-            Erro ao salvar
-          </span>;
+        return <span className="flex items-center gap-1 text-destructive"><AlertCircle className="h-3 w-3" />Erro ao salvar</span>;
       default:
         return <span className="text-muted-foreground">Salvo automaticamente</span>;
     }
   };
-  return <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b">
+
+  return (
+    <div className="flex h-full min-h-0 flex-col overflow-hidden">
+      <div className="shrink-0 border-b px-4 py-3">
+        <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handlePrevDay}>
             <ChevronLeft className="h-4 w-4" />
           </Button>
-          
+
           <Popover>
             <PopoverTrigger asChild>
               <Button variant="ghost" className={cn('h-8 px-3 font-medium', isToday && 'text-primary')}>
                 <CalendarIcon className="mr-2 h-4 w-4" />
-                {format(currentDate, "d 'de' MMMM, yyyy", {
-                locale: ptBR
-              })}
+                {format(currentDate, "d 'de' MMMM, yyyy", { locale: ptBR })}
               </Button>
             </PopoverTrigger>
             <PopoverContent className="w-auto p-0" align="start">
-              <Calendar mode="single" selected={currentDate} onSelect={date => date && onDateChange(date)} locale={ptBR} />
+              <Calendar mode="single" selected={currentDate} onSelect={(date) => date && onDateChange(date)} locale={ptBR} />
             </PopoverContent>
           </Popover>
 
@@ -283,18 +559,16 @@ export function NoteEditor({
             <ChevronRight className="h-4 w-4" />
           </Button>
 
-          {isToday && <span className="text-xs text-primary font-medium px-2 py-0.5 bg-primary/10 rounded-full">
-              Hoje
-            </span>}
+          {isToday && <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">Hoje</span>}
         </div>
 
         <div className="flex items-center gap-1">
-          <Button
-            variant={hideComments ? "default" : "ghost"}
-            size="icon"
+            <Button
+              variant={hideComments ? 'default' : 'ghost'}
+              size="icon"
             className="h-8 w-8"
             onClick={() => setHideComments(!hideComments)}
-            title={hideComments ? "Mostrar comentários" : "Ocultar comentários"}
+            title={hideComments ? 'Mostrar comentarios' : 'Ocultar comentarios'}
           >
             {hideComments ? <MessageSquareOff className="h-4 w-4" /> : <MessageSquare className="h-4 w-4" />}
           </Button>
@@ -305,81 +579,128 @@ export function NoteEditor({
             <Redo2 className="h-4 w-4" />
           </Button>
           {!autosaveEnabled && (
-            <Button 
-              variant={hasUnsavedChanges ? "default" : "ghost"} 
-              size="sm" 
-              className="h-8 px-3" 
-              onClick={onSave}
-              disabled={!hasUnsavedChanges}
-              title="Salvar (Ctrl+S)"
-            >
-              <Save className="h-4 w-4 mr-1" />
+            <Button variant={hasUnsavedChanges ? 'default' : 'ghost'} size="sm" className="h-8 px-3" onClick={onSave} disabled={!hasUnsavedChanges} title="Salvar (Ctrl+S)">
+              <Save className="mr-1 h-4 w-4" />
               Salvar
             </Button>
           )}
         </div>
       </div>
-
-      {/* Notes list sidebar */}
-      {showNotesList && <NotesList dates={allDatesWithNotes} currentDate={format(currentDate, 'yyyy-MM-dd')} onSelectDate={date => {
-      // Parse date string to local Date (avoiding UTC interpretation)
-      const [year, month, day] = date.split('-').map(Number);
-      onDateChange(new Date(year, month - 1, day));
-      setShowNotesList(false);
-    }} onClose={() => setShowNotesList(false)} />}
-
-      {/* Search bar */}
-      {isSearching && <div className="px-4 py-2 border-b">
-          <Input placeholder="Pesquisar nas notas..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="h-8" autoFocus />
-          {searchResults.length > 0 && <div className="mt-2 space-y-1 max-h-40 overflow-y-auto">
-              {searchResults.map(result => {
-                // Parse date string to local Date (avoiding UTC interpretation)
-                const [year, month, day] = result.date.split('-').map(Number);
-                const localDate = new Date(year, month - 1, day);
-                return (
-                  <button key={result.date} className="w-full text-left px-2 py-1 rounded hover:bg-muted text-sm" onClick={() => {
-                    onDateChange(localDate);
-                    setIsSearching(false);
-                  }}>
-                    <span className="font-medium">
-                      {format(localDate, "d 'de' MMMM", { locale: ptBR })}
-                    </span>
-                    <span className="text-muted-foreground ml-2 truncate">
-                      {result.lines[0]?.content.substring(0, 50)}...
-                    </span>
-                  </button>
-                );
-              })}
-            </div>}
-        </div>}
-
-      {/* Keyboard shortcuts hint */}
-      <div className="px-4 py-2 text-xs text-muted-foreground border-b flex gap-4 flex-wrap">
-        <span>Ctrl+1: Título</span>
-        <span>Ctrl+2: Subtítulo</span>
-        <span>Ctrl+3: Citação</span>
-        <span>Ctrl+4: Tópico</span>
-        <span>Ctrl+0: Parágrafo</span>
-        <span>Ctrl+5: Comentário</span>
-        <span>Tab/Shift+Tab: Indentação</span>
       </div>
 
-      {/* Editor content */}
-      <div ref={editorRef} className="flex-1 overflow-y-auto px-4 py-4">
-        <div className="max-w-2xl mx-auto space-y-1">
-          {visibleLines.map(line => <NoteLineComponent key={line.id} line={line} isFocused={focusedLineId === line.id} onUpdate={updates => onUpdateLine(line.id, updates)} onKeyDown={e => handleKeyDown(line.id, e)} onFocus={() => setFocusedLineId(line.id)} onToggleCollapse={() => onToggleCollapse(line.id)} highlightTerms={highlightTerms} hasChildren={(line.type === 'title' || line.type === 'subtitle') && note.lines.some((l, i) => {
-          const lineIndex = note.lines.findIndex(nl => nl.id === line.id);
-          if (i <= lineIndex) return false;
-          const level = l.type === 'title' ? 1 : l.type === 'subtitle' ? 2 : 3;
-          const currentLevel = line.type === 'title' ? 1 : 2;
-          return level > currentLevel;
-        })} />)}
+      <div className="shrink-0 border-b px-4 py-2">
+        <div className="flex flex-wrap items-center gap-2">
+        <Button variant={focusedLine?.type === 'paragraph' ? 'default' : 'outline'} size="sm" onClick={() => handleApplyType('paragraph')} disabled={!focusedLine}>
+          <Type className="mr-2 h-4 w-4" />
+          Texto
+        </Button>
+        <Button variant={focusedLine?.type === 'title' ? 'default' : 'outline'} size="sm" onClick={() => handleApplyType('title')} disabled={!focusedLine}>
+          <Heading1 className="mr-2 h-4 w-4" />
+          Titulo
+        </Button>
+        <Button variant={focusedLine?.type === 'subtitle' ? 'default' : 'outline'} size="sm" onClick={() => handleApplyType('subtitle')} disabled={!focusedLine}>
+          <Heading2 className="mr-2 h-4 w-4" />
+          Subtitulo
+        </Button>
+        <Button variant={focusedLine?.type === 'bullet' ? 'default' : 'outline'} size="sm" onClick={() => handleApplyType('bullet')} disabled={!focusedLine}>
+          <List className="mr-2 h-4 w-4" />
+          Topico
+        </Button>
+        <Button variant={focusedLine?.type === 'quote' ? 'default' : 'outline'} size="sm" onClick={() => handleApplyType('quote')} disabled={!focusedLine}>
+          <Quote className="mr-2 h-4 w-4" />
+          Citacao
+        </Button>
+        <Button variant={focusedLine?.type === 'comment' ? 'default' : 'outline'} size="sm" onClick={() => handleApplyType('comment')} disabled={!focusedLine}>
+          <MessageSquare className="mr-2 h-4 w-4" />
+          Comentario
+        </Button>
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button variant="outline" size="sm">
+              <FileStack className="mr-2 h-4 w-4" />
+              Templates
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent align="start" className="w-60 p-2">
+            <div className="space-y-1">
+              {noteTemplates.map((template) => (
+                <Button key={template.id} variant="ghost" className="w-full justify-start" onClick={() => handleInsertTemplate(template.id)}>
+                  {template.name}
+                </Button>
+              ))}
+            </div>
+          </PopoverContent>
+        </Popover>
+        {focusedLine && focusedLine.content.trim() && (
+          activityCreatedLineIds.includes(focusedLine.id) ? (
+            <div className="inline-flex h-9 items-center rounded-md border border-emerald-200 bg-emerald-50 px-3 text-sm text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-950/30 dark:text-emerald-300">
+              <Link2 className="mr-2 h-4 w-4" />
+              Atividade criada
+            </div>
+          ) : (
+            (onOpenDetailedActivityFromLine || onCreateActivityFromLine) && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  if (onOpenDetailedActivityFromLine) {
+                    onOpenDetailedActivityFromLine(focusedLine);
+                    return;
+                  }
+                  onCreateActivityFromLine?.(focusedLine);
+                }}
+              >
+                <Link2 className="mr-2 h-4 w-4" />
+                Virar atividade
+              </Button>
+            )
+          )
+        )}
         </div>
       </div>
 
-      {/* Autosave indicator */}
-      <div className="px-4 py-2 border-t text-xs text-right">
+      <div ref={editorRef} className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
+        <div className="space-y-1">
+          {visibleLines.map((line) => (
+            <NoteLineComponent
+              key={line.id}
+              line={line}
+              isFocused={focusedLineId === line.id}
+              isSelected={selectedLineIds.includes(line.id)}
+              isSearchMatch={highlightedLineIds.includes(line.id)}
+              searchFlashKey={searchFocusKey}
+              onUpdate={(updates) => onUpdateLine(line.id, updates)}
+              onKeyDown={(e) => handleKeyDown(line.id, e)}
+              onPasteText={(text) => handlePasteText(line.id, text)}
+              onMouseDown={(event) => handleLineMouseDown(line.id, event)}
+              onFocus={() => setFocusedLineId(line.id)}
+              onToggleCollapse={() => onToggleCollapse(line.id)}
+              onCreateActivity={
+                onOpenDetailedActivityFromLine
+                  ? () => onOpenDetailedActivityFromLine(line)
+                  : onCreateActivityFromLine
+                    ? () => onCreateActivityFromLine(line)
+                    : undefined
+              }
+              activityCreated={activityCreatedLineIds.includes(line.id)}
+              selectionRequest={selectionRequest?.lineId === line.id ? { start: selectionRequest.start, end: selectionRequest.end, key: selectionRequest.key } : null}
+              hasChildren={(line.type === 'title' || line.type === 'subtitle') && note.lines.some((candidate, index) => {
+                const currentIndex = note.lines.findIndex((noteLine) => noteLine.id === line.id);
+                if (index <= currentIndex) {
+                  return false;
+                }
+                const level = candidate.type === 'title' ? 1 : candidate.type === 'subtitle' ? 2 : 3;
+                const currentLevel = line.type === 'title' ? 1 : 2;
+                return level > currentLevel;
+              })}
+            />
+          ))}
+        </div>
+      </div>
+
+      <div className="shrink-0 border-t px-4 py-2 text-right text-xs">
         {renderSaveStatus()}
       </div>
-    </div>;
+    </div>
+  );
 }

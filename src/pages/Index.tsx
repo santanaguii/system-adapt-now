@@ -1,38 +1,74 @@
-import { useState, useCallback, useEffect } from 'react';
+import { Suspense, lazy, useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { useActivities } from '@/hooks/useActivities';
 import { useNotes } from '@/hooks/useNotes';
 import { useSettings } from '@/hooks/useSettings';
 import { useAuthContext } from '@/contexts/AuthContext';
 import { useAppearanceContext } from '@/contexts/AppearanceContext';
-import { useIsMobile } from '@/hooks/use-mobile';
-import { ActivityList } from '@/components/activities/ActivityList';
-import { NoteEditor } from '@/components/notes/NoteEditor';
-import { NotesSidebar } from '@/components/notes/NotesSidebar';
-import { SettingsPanel } from '@/components/settings/SettingsPanel';
 import { UnsavedChangesDialog } from '@/components/UnsavedChangesDialog';
-import { MobileLayout } from '@/components/layout/MobileLayout';
-import { TabletLayout } from '@/components/layout/TabletLayout';
-import { LayoutModeSelector } from '@/components/layout/LayoutModeSelector';
 import { Button } from '@/components/ui/button';
-import { LineType, SortOption } from '@/types';
+import { Activity, LineType, NoteLine, NoteSearchResult, SortOption } from '@/types';
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@/components/ui/resizable';
-import { LogOut, User } from 'lucide-react';
+import { Loader2, LogOut, User } from 'lucide-react';
 import { format } from 'date-fns';
+import { ACTIVITY_META, buildDependencySyncUpdates, createMetaPatch, getSourceLineIds } from '@/lib/activity-meta';
+import { formatDateKey, getDateKeyInTimeZone } from '@/lib/date';
 
-// Breakpoints
+const ActivityList = lazy(() =>
+  import('@/components/activities/ActivityList').then((module) => ({ default: module.ActivityList }))
+);
+const NoteEditor = lazy(() =>
+  import('@/components/notes/NoteEditor').then((module) => ({ default: module.NoteEditor }))
+);
+const NotesSidebar = lazy(() =>
+  import('@/components/notes/NotesSidebar').then((module) => ({ default: module.NotesSidebar }))
+);
+const NoteFormattingHints = lazy(() =>
+  import('@/components/notes/NoteFormattingHints').then((module) => ({ default: module.NoteFormattingHints }))
+);
+const SettingsPanel = lazy(() =>
+  import('@/components/settings/SettingsPanel').then((module) => ({ default: module.SettingsPanel }))
+);
+const ActivityCreateDialog = lazy(() =>
+  import('@/components/activities/ActivityCreateDialog').then((module) => ({ default: module.ActivityCreateDialog }))
+);
+const ActivityDetail = lazy(() =>
+  import('@/components/activities/ActivityDetail').then((module) => ({ default: module.ActivityDetail }))
+);
+const MobileLayout = lazy(() =>
+  import('@/components/layout/MobileLayout').then((module) => ({ default: module.MobileLayout }))
+);
+const TabletLayout = lazy(() =>
+  import('@/components/layout/TabletLayout').then((module) => ({ default: module.TabletLayout }))
+);
+const LayoutModeSelector = lazy(() =>
+  import('@/components/layout/LayoutModeSelector').then((module) => ({ default: module.LayoutModeSelector }))
+);
+
 const MOBILE_MAX = 768;
 const TABLET_MAX = 1024;
+
+function SectionFallback() {
+  return (
+    <div className="flex h-full min-h-[240px] items-center justify-center text-muted-foreground">
+      <Loader2 className="h-5 w-5 animate-spin" />
+    </div>
+  );
+}
 
 const Index = () => {
   const { user, signOut } = useAuthContext();
   const { appearance, updateAppearance } = useAppearanceContext();
-  const isMobileDevice = useIsMobile();
   const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1200);
   const [currentDate, setCurrentDate] = useState(new Date());
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [sortOption, setSortOption] = useState<SortOption>('manual');
+  const [pendingLineToConvert, setPendingLineToConvert] = useState<NoteLine | null>(null);
+  const [showCreateDialogFromNote, setShowCreateDialogFromNote] = useState(false);
+  const [selectedActivityFromNote, setSelectedActivityFromNote] = useState<Activity | null>(null);
+  const [activeNoteSearchFlash, setActiveNoteSearchFlash] = useState<(NoteSearchResult & { flashKey: string }) | null>(null);
+  const [pendingSearchSelection, setPendingSearchSelection] = useState<NoteSearchResult | null>(null);
+  const searchFlashTimeoutRef = useRef<number | null>(null);
 
-  // Track window width for tablet detection
   useEffect(() => {
     const handleResize = () => setWindowWidth(window.innerWidth);
     window.addEventListener('resize', handleResize);
@@ -54,9 +90,11 @@ const Index = () => {
     updateListDisplay,
     updateSavedFilters,
     updateSavedSort,
+    updateNoteTemplates,
   } = useSettings();
 
   const {
+    activities,
     sortedActivities,
     addActivity,
     updateActivity,
@@ -65,11 +103,11 @@ const Index = () => {
     reorderActivities,
   } = useActivities(sortOption, settings.customFields);
 
-  const { 
-    getNote, 
-    updateLine, 
-    addLine, 
-    deleteLine, 
+  const {
+    getNote,
+    updateLine,
+    addLine,
+    deleteLine,
     toggleLineCollapsed,
     updateLineIndent,
     searchNotes,
@@ -87,40 +125,97 @@ const Index = () => {
   const [showUnsavedDialog, setShowUnsavedDialog] = useState(false);
   const [pendingDateChange, setPendingDateChange] = useState<Date | null>(null);
 
-  // Handle date change with unsaved changes check
+  const clearSearchFlash = useCallback(() => {
+    if (searchFlashTimeoutRef.current !== null) {
+      window.clearTimeout(searchFlashTimeoutRef.current);
+      searchFlashTimeoutRef.current = null;
+    }
+    setActiveNoteSearchFlash(null);
+  }, []);
+
+  const applySearchSelection = useCallback((result: NoteSearchResult) => {
+    const selectedDate = new Date(`${result.date}T12:00:00`);
+    const flashKey = `${result.date}:${result.primaryLineId}:${result.matchStart}:${Date.now()}`;
+
+    setCurrentDate(selectedDate);
+    if (searchFlashTimeoutRef.current !== null) {
+      window.clearTimeout(searchFlashTimeoutRef.current);
+    }
+    setActiveNoteSearchFlash({ ...result, flashKey });
+    searchFlashTimeoutRef.current = window.setTimeout(() => {
+      setActiveNoteSearchFlash((current) => current?.flashKey === flashKey ? null : current);
+      searchFlashTimeoutRef.current = null;
+    }, 1200);
+  }, []);
+
   const handleDateChange = useCallback((newDate: Date) => {
     if (hasUnsavedChanges && !settings.autosaveEnabled) {
       setPendingDateChange(newDate);
+      setPendingSearchSelection(null);
       setShowUnsavedDialog(true);
     } else {
       setCurrentDate(newDate);
+      clearSearchFlash();
     }
-  }, [hasUnsavedChanges, settings.autosaveEnabled]);
+  }, [clearSearchFlash, hasUnsavedChanges, settings.autosaveEnabled]);
+
+  const handleSelectSearchResult = useCallback((result: NoteSearchResult) => {
+    const selectedDate = new Date(`${result.date}T12:00:00`);
+
+    if (hasUnsavedChanges && !settings.autosaveEnabled) {
+      setPendingDateChange(selectedDate);
+      setPendingSearchSelection(result);
+      setShowUnsavedDialog(true);
+      return;
+    }
+
+    applySearchSelection(result);
+  }, [applySearchSelection, hasUnsavedChanges, settings.autosaveEnabled]);
 
   const handleSaveAndContinue = useCallback(async () => {
     await saveAllPending();
     if (pendingDateChange) {
-      setCurrentDate(pendingDateChange);
+      if (pendingSearchSelection) {
+        applySearchSelection(pendingSearchSelection);
+      } else {
+        setCurrentDate(pendingDateChange);
+        clearSearchFlash();
+      }
       setPendingDateChange(null);
+      setPendingSearchSelection(null);
     }
     setShowUnsavedDialog(false);
-  }, [saveAllPending, pendingDateChange]);
+  }, [applySearchSelection, clearSearchFlash, pendingDateChange, pendingSearchSelection, saveAllPending]);
 
   const handleDiscardAndContinue = useCallback(() => {
     discardChanges();
     if (pendingDateChange) {
-      setCurrentDate(pendingDateChange);
+      if (pendingSearchSelection) {
+        applySearchSelection(pendingSearchSelection);
+      } else {
+        setCurrentDate(pendingDateChange);
+        clearSearchFlash();
+      }
       setPendingDateChange(null);
+      setPendingSearchSelection(null);
     }
     setShowUnsavedDialog(false);
-  }, [discardChanges, pendingDateChange]);
+  }, [applySearchSelection, clearSearchFlash, discardChanges, pendingDateChange, pendingSearchSelection]);
 
   const handleCancelNavigation = useCallback(() => {
     setPendingDateChange(null);
+    setPendingSearchSelection(null);
     setShowUnsavedDialog(false);
   }, []);
 
-  // Ctrl+S global handler for manual save
+  useEffect(() => {
+    return () => {
+      if (searchFlashTimeoutRef.current !== null) {
+        window.clearTimeout(searchFlashTimeoutRef.current);
+      }
+    };
+  }, []);
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 's') {
@@ -132,7 +227,6 @@ const Index = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [saveAllPending]);
 
-  // Warn before leaving page with unsaved changes
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       if (hasUnsavedChanges && !settings.autosaveEnabled) {
@@ -145,6 +239,36 @@ const Index = () => {
   }, [hasUnsavedChanges, settings.autosaveEnabled]);
 
   const currentNote = getNote(currentDate);
+  const pendingLineInitialTitle = useMemo(
+    () => pendingLineToConvert?.content.trim() ?? '',
+    [pendingLineToConvert]
+  );
+  const pendingLineInitialCustomFields = useMemo(
+    () => {
+      if (!pendingLineToConvert) {
+        return null;
+      }
+
+      return createMetaPatch({
+        [ACTIVITY_META.bucket]: formatDateKey(currentDate) <= getDateKeyInTimeZone() ? 'today' : 'upcoming',
+        dueDate: formatDateKey(currentDate),
+        [ACTIVITY_META.linkedNoteDates]: [formatDateKey(currentDate)],
+        [ACTIVITY_META.sourceLineIds]: [pendingLineToConvert.id],
+      });
+    },
+    [currentDate, pendingLineToConvert]
+  );
+  const activityCreatedLineIds = useMemo(
+    () => activities.flatMap((activity) => getSourceLineIds(activity)),
+    [activities]
+  );
+  const activityByLineId = useMemo(
+    () => new Map(
+      activities.flatMap((activity) => getSourceLineIds(activity).map((lineId) => [lineId, activity] as const))
+    ),
+    [activities]
+  );
+  const allActivities = activities;
 
   const handleUpdateLine = useCallback(
     (lineId: string, updates: { content?: string; type?: LineType }) => {
@@ -181,7 +305,28 @@ const Index = () => {
     [currentDate, updateLineIndent]
   );
 
-  // Common props for layouts
+  const handleOpenDetailedActivityFormFromLine = useCallback((line: NoteLine) => {
+    if (!line.content.trim()) {
+      return;
+    }
+
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
+
+    setPendingLineToConvert(line);
+    setShowCreateDialogFromNote(true);
+  }, []);
+
+  const handleOpenActivityFromLine = useCallback((line: NoteLine) => {
+    const linkedActivity = activityByLineId.get(line.id);
+    if (!linkedActivity) {
+      return;
+    }
+
+    setSelectedActivityFromNote(linkedActivity);
+  }, [activityByLineId]);
+
   const commonProps = {
     username: user?.username || '',
     onSignOut: signOut,
@@ -194,6 +339,7 @@ const Index = () => {
     onToggleCollapse: handleToggleCollapse,
     onUpdateIndent: handleUpdateIndent,
     onSearch: searchNotes,
+    onSelectSearchResult: handleSelectSearchResult,
     allDatesWithNotes,
     saveStatus,
     hasUnsavedChanges,
@@ -218,28 +364,37 @@ const Index = () => {
     onSortChange: setSortOption,
     allowReopenCompleted: settings.allowReopenCompleted,
     activityCreationMode: settings.activityCreationMode,
+    onCreateActivityFromLine: handleOpenDetailedActivityFormFromLine,
+    onOpenDetailedActivityFromLine: handleOpenDetailedActivityFormFromLine,
+    activityCreatedLineIds,
+    highlightedLineIds: activeNoteSearchFlash?.date === currentNote.date ? activeNoteSearchFlash.matchedLineIds : [],
+    searchFocusKey: activeNoteSearchFlash ? activeNoteSearchFlash.flashKey : null,
+    noteTemplates: settings.noteTemplates,
   };
 
-  // Determine which layout to use
   const useMobileLayout = isMobile && appearance.mobileLayoutMode === 'mobile';
   const showLayoutSelector = isMobile;
 
   const renderContent = () => {
-    // Mobile with mobile layout preference
     if (useMobileLayout) {
-      return <MobileLayout {...commonProps} />;
+      return (
+        <Suspense fallback={<SectionFallback />}>
+          <MobileLayout {...commonProps} />
+        </Suspense>
+      );
     }
 
-    // Tablet layout (or mobile with desktop preference)
     if (isTablet || (isMobile && appearance.mobileLayoutMode === 'desktop')) {
-      return <TabletLayout {...commonProps} />;
+      return (
+        <Suspense fallback={<SectionFallback />}>
+          <TabletLayout {...commonProps} />
+        </Suspense>
+      );
     }
 
-    // Desktop layout
     return (
-      <div className="min-h-screen flex flex-col bg-background">
-        {/* Top bar with user info */}
-        <div className="flex items-center justify-between px-4 py-2 border-b bg-muted/30">
+      <div className="flex h-screen flex-col overflow-hidden bg-background">
+        <div className="shrink-0 flex items-center justify-between border-b bg-muted/30 px-4 py-2">
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <User className="h-4 w-4" />
             <span>{user?.username}</span>
@@ -250,66 +405,83 @@ const Index = () => {
           </Button>
         </div>
 
-        {/* Main content with resizable panels */}
-        <div className="flex-1 flex overflow-hidden">
+        <div className="min-h-0 flex flex-1 overflow-hidden">
           <ResizablePanelGroup direction="horizontal" className="flex-1">
-            {/* Notes Sidebar */}
-            <ResizablePanel defaultSize={20} minSize={15} maxSize={35}>
-              <NotesSidebar
-                dates={allDatesWithNotes}
-                currentDate={currentDate}
-                onSelectDate={handleDateChange}
-                onSearch={searchNotes}
-              />
+            <ResizablePanel defaultSize={65} minSize={40}>
+              <div className="flex h-full min-h-0 flex-col overflow-hidden">
+                <ResizablePanelGroup direction="horizontal" className="min-h-0 flex-1">
+                  <ResizablePanel defaultSize={30} minSize={20} maxSize={45}>
+                    <Suspense fallback={<SectionFallback />}>
+                      <NotesSidebar
+                        dates={allDatesWithNotes}
+                        currentDate={currentDate}
+                        onSelectDate={handleDateChange}
+                        onSearch={searchNotes}
+                        onSelectSearchResult={handleSelectSearchResult}
+                      />
+                    </Suspense>
+                  </ResizablePanel>
+
+                  <ResizableHandle withHandle />
+
+                  <ResizablePanel defaultSize={70} minSize={40}>
+                    <Suspense fallback={<SectionFallback />}>
+                      <NoteEditor
+                        currentDate={currentDate}
+                        note={currentNote}
+                        onDateChange={handleDateChange}
+                        onUpdateLine={handleUpdateLine}
+                        onAddLine={handleAddLine}
+                        onDeleteLine={handleDeleteLine}
+                        onToggleCollapse={handleToggleCollapse}
+                        onUpdateIndent={handleUpdateIndent}
+                        saveStatus={saveStatus}
+                        hasUnsavedChanges={hasUnsavedChanges}
+                        autosaveEnabled={settings.autosaveEnabled}
+                        onSave={saveAllPending}
+                        onUndo={undo}
+                        onRedo={redo}
+                        canUndo={canUndo}
+                        canRedo={canRedo}
+                        onCreateActivityFromLine={handleOpenDetailedActivityFormFromLine}
+                        onOpenDetailedActivityFromLine={handleOpenDetailedActivityFormFromLine}
+                        activityCreatedLineIds={activityCreatedLineIds}
+                        highlightedLineIds={activeNoteSearchFlash?.date === currentNote.date ? activeNoteSearchFlash.matchedLineIds : []}
+                        searchFocusKey={activeNoteSearchFlash ? activeNoteSearchFlash.flashKey : null}
+                        noteTemplates={settings.noteTemplates}
+                      />
+                    </Suspense>
+                  </ResizablePanel>
+                </ResizablePanelGroup>
+
+                <Suspense fallback={null}>
+                  <NoteFormattingHints />
+                </Suspense>
+              </div>
             </ResizablePanel>
 
             <ResizableHandle withHandle />
 
-            {/* Note Editor */}
-            <ResizablePanel defaultSize={45} minSize={25}>
-              <NoteEditor
-                currentDate={currentDate}
-                note={currentNote}
-                onDateChange={handleDateChange}
-                onUpdateLine={handleUpdateLine}
-                onAddLine={handleAddLine}
-                onDeleteLine={handleDeleteLine}
-                onToggleCollapse={handleToggleCollapse}
-                onUpdateIndent={handleUpdateIndent}
-                onSearch={searchNotes}
-                allDatesWithNotes={allDatesWithNotes}
-                saveStatus={saveStatus}
-                hasUnsavedChanges={hasUnsavedChanges}
-                autosaveEnabled={settings.autosaveEnabled}
-                onSave={saveAllPending}
-                onUndo={undo}
-                onRedo={redo}
-                canUndo={canUndo}
-                canRedo={canRedo}
-              />
-            </ResizablePanel>
-
-            <ResizableHandle withHandle />
-
-            {/* Activities Panel */}
             <ResizablePanel defaultSize={35} minSize={20}>
-              <ActivityList
-                activities={sortedActivities}
-                tags={settings.tags}
-                customFields={settings.customFields}
-                listDisplay={settings.listDisplay}
-                savedFilters={settings.savedFilters}
-                onAdd={addActivity}
-                onUpdate={updateActivity}
-                onDelete={deleteActivity}
-                onToggleComplete={toggleComplete}
-                onReorder={reorderActivities}
-                onOpenSettings={() => setSettingsOpen(true)}
-                sortOption={sortOption}
-                onSortChange={setSortOption}
-                allowReopenCompleted={settings.allowReopenCompleted}
-                activityCreationMode={settings.activityCreationMode}
-              />
+              <Suspense fallback={<SectionFallback />}>
+                <ActivityList
+                  activities={sortedActivities}
+                  tags={settings.tags}
+                  customFields={settings.customFields}
+                  listDisplay={settings.listDisplay}
+                  savedFilters={settings.savedFilters}
+                  onAdd={addActivity}
+                  onUpdate={updateActivity}
+                  onDelete={deleteActivity}
+                  onToggleComplete={toggleComplete}
+                  onReorder={reorderActivities}
+                  onOpenSettings={() => setSettingsOpen(true)}
+                  sortOption={sortOption}
+                  onSortChange={setSortOption}
+                  allowReopenCompleted={settings.allowReopenCompleted}
+                  activityCreationMode={settings.activityCreationMode}
+                />
+              </Suspense>
             </ResizablePanel>
           </ResizablePanelGroup>
         </div>
@@ -321,47 +493,122 @@ const Index = () => {
     <>
       {renderContent()}
 
-      {/* Layout Mode Selector - only on mobile */}
       {showLayoutSelector && (
-        <LayoutModeSelector
-          currentMode={appearance.mobileLayoutMode}
-          onModeChange={(mode) => updateAppearance({ mobileLayoutMode: mode })}
-        />
+        <Suspense fallback={null}>
+          <LayoutModeSelector
+            currentMode={appearance.mobileLayoutMode}
+            onModeChange={(mode) => updateAppearance({ mobileLayoutMode: mode })}
+          />
+        </Suspense>
       )}
 
-      {/* Settings Panel */}
-      <SettingsPanel
-        isOpen={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
-        customFields={settings.customFields}
-        tags={settings.tags}
-        activityCreationMode={settings.activityCreationMode}
-        allowReopenCompleted={settings.allowReopenCompleted}
-        autosaveEnabled={settings.autosaveEnabled}
-        appearance={appearance}
-        listDisplay={settings.listDisplay}
-        savedFilters={settings.savedFilters}
-        savedSort={settings.savedSort}
-        onAddField={addCustomField}
-        onUpdateField={updateCustomField}
-        onDeleteField={deleteCustomField}
-        onAddTag={addTag}
-        onUpdateTag={updateTag}
-        onDeleteTag={deleteTag}
-        onUpdateGeneralSettings={updateGeneralSettings}
-        onUpdateAppearance={updateAppearance}
-        onUpdateListDisplay={updateListDisplay}
-        onUpdateFilters={updateSavedFilters}
-        onUpdateSort={updateSavedSort}
-      />
+      <Suspense fallback={null}>
+        {settingsOpen && (
+          <SettingsPanel
+            isOpen={settingsOpen}
+            onClose={() => setSettingsOpen(false)}
+            customFields={settings.customFields}
+            tags={settings.tags}
+            noteTemplates={settings.noteTemplates}
+            activityCreationMode={settings.activityCreationMode}
+            allowReopenCompleted={settings.allowReopenCompleted}
+            autosaveEnabled={settings.autosaveEnabled}
+            appearance={appearance}
+            listDisplay={settings.listDisplay}
+            savedFilters={settings.savedFilters}
+            savedSort={settings.savedSort}
+            onAddField={addCustomField}
+            onUpdateField={updateCustomField}
+            onDeleteField={deleteCustomField}
+            onAddTag={addTag}
+            onUpdateTag={updateTag}
+            onDeleteTag={deleteTag}
+            onUpdateGeneralSettings={updateGeneralSettings}
+            onUpdateAppearance={updateAppearance}
+            onUpdateListDisplay={updateListDisplay}
+            onUpdateFilters={updateSavedFilters}
+            onUpdateSort={updateSavedSort}
+            onUpdateNoteTemplates={updateNoteTemplates}
+          />
+        )}
+      </Suspense>
 
-      {/* Unsaved Changes Dialog */}
       <UnsavedChangesDialog
         isOpen={showUnsavedDialog}
         onSave={handleSaveAndContinue}
         onDiscard={handleDiscardAndContinue}
         onCancel={handleCancelNavigation}
       />
+
+      <Suspense fallback={null}>
+        {selectedActivityFromNote && (
+          <ActivityDetail
+            activity={selectedActivityFromNote}
+            activities={allActivities}
+            tags={settings.tags}
+            customFields={settings.customFields.filter((field) => field.enabled && (field.display === 'detail' || field.display === 'both'))}
+            formLayout={settings.listDisplay.formLayout}
+            onSave={async (activityId, payload) => {
+              updateActivity(activityId, {
+                title: payload.title,
+                tags: payload.tags,
+                customFields: payload.customFields,
+              });
+              const previousCustomFields = selectedActivityFromNote.customFields;
+              const relatedUpdates = buildDependencySyncUpdates({
+                activities: allActivities,
+                currentActivityId: activityId,
+                previousCustomFields,
+                nextCustomFields: payload.customFields,
+              });
+              relatedUpdates.forEach((update) => {
+                updateActivity(update.id, { customFields: update.customFields });
+              });
+            }}
+            onClose={() => setSelectedActivityFromNote(null)}
+            isReadOnly={selectedActivityFromNote.completed}
+          />
+        )}
+      </Suspense>
+
+      <Suspense fallback={null}>
+        {pendingLineToConvert && showCreateDialogFromNote && (
+          <ActivityCreateDialog
+            isOpen={showCreateDialogFromNote}
+            onOpenChange={(open) => {
+              setShowCreateDialogFromNote(open);
+              if (!open) {
+                setPendingLineToConvert(null);
+              }
+            }}
+            title="Transformar nota em atividade"
+            submitLabel="Criar Atividade"
+            activities={allActivities}
+            tags={settings.tags}
+            customFields={settings.customFields}
+            formLayout={settings.listDisplay.formLayout}
+            titleFieldMode="fixed-top"
+            initialTitle={pendingLineInitialTitle}
+            initialCustomFields={pendingLineInitialCustomFields ?? undefined}
+            onSubmit={async ({ title, tags, customFields }) => {
+              const createdActivity = await addActivity(title, tags.length > 0 ? tags : undefined, customFields);
+              if (createdActivity) {
+                const relatedUpdates = buildDependencySyncUpdates({
+                  activities: [...allActivities, createdActivity],
+                  currentActivityId: createdActivity.id,
+                  previousCustomFields: {},
+                  nextCustomFields: customFields,
+                });
+                relatedUpdates.forEach((update) => {
+                  updateActivity(update.id, { customFields: update.customFields });
+                });
+              }
+              setShowCreateDialogFromNote(false);
+              setPendingLineToConvert(null);
+            }}
+          />
+        )}
+      </Suspense>
     </>
   );
 };

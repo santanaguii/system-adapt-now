@@ -1,25 +1,48 @@
 import { useState, useEffect } from 'react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { FileText, Search, Plus, Calendar } from 'lucide-react';
+import { FileText, Search, Calendar, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar as CalendarComponent } from '@/components/ui/calendar';
 import { cn } from '@/lib/utils';
-import { DailyNote } from '@/types';
+import { NoteSearchResult } from '@/types';
 
 interface NotesSidebarProps {
   dates: string[];
   currentDate: Date;
   onSelectDate: (date: Date) => void;
-  onSearch: (query: string) => DailyNote[];
+  onSearch: (query: string) => NoteSearchResult[];
+  onSelectSearchResult?: (result: NoteSearchResult) => void;
 }
 
-export function NotesSidebar({ dates, currentDate, onSelectDate, onSearch }: NotesSidebarProps) {
+function renderHighlightedSnippet(snippet: string, terms: string[]) {
+  if (terms.length === 0 || !snippet) {
+    return snippet;
+  }
+
+  const escapedTerms = terms.map((term) => term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  const pattern = new RegExp(`(${escapedTerms.join('|')})`, 'gi');
+  const parts = snippet.split(pattern);
+
+  return parts.map((part, index) => {
+    const isMatch = terms.some((term) => part.toLowerCase() === term.toLowerCase());
+    return (
+      <span
+        key={`${part}-${index}`}
+        className={isMatch ? 'rounded bg-amber-200 px-0.5 text-foreground dark:bg-amber-800/80 dark:text-amber-50' : undefined}
+      >
+        {part}
+      </span>
+    );
+  });
+}
+
+export function NotesSidebar({ dates, currentDate, onSelectDate, onSearch, onSelectSearchResult }: NotesSidebarProps) {
   const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<DailyNote[]>([]);
+  const [searchResults, setSearchResults] = useState<NoteSearchResult[]>([]);
   const currentDateStr = format(currentDate, 'yyyy-MM-dd');
 
   useEffect(() => {
@@ -47,16 +70,12 @@ export function NotesSidebar({ dates, currentDate, onSelectDate, onSearch }: Not
     return acc;
   }, {} as Record<string, string[]>);
 
-  const handleNewNote = () => {
-    onSelectDate(new Date());
-  };
-
   const isToday = (date: string) => {
     return date === format(new Date(), 'yyyy-MM-dd');
   };
 
   return (
-    <div className="flex flex-col h-full bg-muted/30">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-muted/30">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b">
         <h2 className="text-lg font-semibold">Notas</h2>
@@ -76,9 +95,6 @@ export function NotesSidebar({ dates, currentDate, onSelectDate, onSearch }: Not
               />
             </PopoverContent>
           </Popover>
-          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleNewNote} title="Nova nota (hoje)">
-            <Plus className="h-4 w-4" />
-          </Button>
         </div>
       </div>
 
@@ -90,34 +106,49 @@ export function NotesSidebar({ dates, currentDate, onSelectDate, onSearch }: Not
             placeholder="Buscar notas..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="h-8 pl-8 text-sm"
+            className="h-8 pl-8 pr-8 text-sm"
           />
+          {searchQuery && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="absolute right-1 top-1/2 h-6 w-6 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              onClick={() => setSearchQuery('')}
+              title="Limpar pesquisa"
+            >
+              <X className="h-3.5 w-3.5" />
+            </Button>
+          )}
         </div>
       </div>
 
       {/* Search Results or Notes List */}
-      <ScrollArea className="flex-1">
+      <ScrollArea className="min-h-0 flex-1">
         {searchQuery.trim() ? (
           <div className="p-2">
             {searchResults.length > 0 ? (
               <div className="space-y-1">
-                {searchResults.map((result) => (
+                {searchResults.map((result, index) => (
                   <button
-                    key={result.date}
+                    key={`${result.date}-${result.primaryLineId}-${result.matchStart}-${index}`}
                     onClick={() => {
+                      if (onSelectSearchResult) {
+                        onSelectSearchResult(result);
+                        return;
+                      }
                       onSelectDate(parseDateString(result.date));
-                      setSearchQuery('');
                     }}
                     className={cn(
-                      'w-full flex flex-col gap-0.5 px-3 py-2 rounded text-sm hover:bg-muted transition-colors text-left',
+                      'w-full flex flex-col gap-1 px-3 py-2 rounded text-sm hover:bg-muted transition-colors text-left',
                       result.date === currentDateStr && 'bg-primary/10 text-primary'
                     )}
                   >
                     <span className="font-medium">
                       {format(parseDateString(result.date), "d 'de' MMMM", { locale: ptBR })}
                     </span>
-                    <span className="text-xs text-muted-foreground truncate">
-                      {result.lines[0]?.content.substring(0, 60)}...
+                    <span className="text-xs leading-relaxed text-muted-foreground">
+                      {renderHighlightedSnippet(result.snippet, result.matchedTerms)}
                     </span>
                   </button>
                 ))}

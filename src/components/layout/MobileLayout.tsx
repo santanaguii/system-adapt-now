@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { NoteEditor } from '@/components/notes/NoteEditor';
+import { NoteFormattingHints } from '@/components/notes/NoteFormattingHints';
 import { ActivityList } from '@/components/activities/ActivityList';
 import { Button } from '@/components/ui/button';
 import { LogOut, User, Settings, FileText, CheckSquare } from 'lucide-react';
-import { Activity, CustomField, Tag, SortOption, DailyNote, LineType, ActivityListDisplaySettings, FilterConfig, ActivityCreationMode } from '@/types';
+import { Activity, CustomField, Tag, SortOption, DailyNote, NoteSearchResult, LineType, ActivityListDisplaySettings, FilterConfig, ActivityCreationMode, NoteLine, NoteTemplate } from '@/types';
 import { SaveStatus } from '@/hooks/useNotes';
 
 interface MobileLayoutProps {
@@ -21,7 +22,8 @@ interface MobileLayoutProps {
   onDeleteLine: (lineId: string) => void;
   onToggleCollapse: (lineId: string) => void;
   onUpdateIndent: (lineId: string, delta: number) => void;
-  onSearch: (query: string) => DailyNote[];
+  onSearch: (query: string) => NoteSearchResult[];
+  onSelectSearchResult?: (result: NoteSearchResult) => void;
   allDatesWithNotes: string[];
   saveStatus: SaveStatus;
   hasUnsavedChanges: boolean;
@@ -31,6 +33,12 @@ interface MobileLayoutProps {
   onRedo: () => void;
   canUndo: boolean;
   canRedo: boolean;
+  onCreateActivityFromLine?: (line: NoteLine) => void;
+  onOpenDetailedActivityFromLine?: (line: NoteLine) => void;
+  activityCreatedLineIds?: string[];
+  highlightedLineIds?: string[];
+  searchFocusKey?: string | null;
+  noteTemplates?: NoteTemplate[];
   
   // Activities
   activities: { active: Activity[]; completed: Activity[] };
@@ -38,7 +46,7 @@ interface MobileLayoutProps {
   customFields: CustomField[];
   listDisplay: ActivityListDisplaySettings;
   savedFilters: FilterConfig[];
-  onAddActivity: (title: string, tags?: string[]) => Promise<Activity | null> | Activity | null;
+  onAddActivity: (title: string, tags?: string[], customFields?: Activity['customFields']) => Promise<Activity | null> | Activity | null;
   onUpdateActivity: (id: string, updates: Partial<Activity>) => void;
   onDeleteActivity: (id: string) => void;
   onToggleComplete: (id: string) => void;
@@ -62,6 +70,7 @@ export function MobileLayout({
   onToggleCollapse,
   onUpdateIndent,
   onSearch,
+  onSelectSearchResult,
   allDatesWithNotes,
   saveStatus,
   hasUnsavedChanges,
@@ -71,6 +80,12 @@ export function MobileLayout({
   onRedo,
   canUndo,
   canRedo,
+  onCreateActivityFromLine,
+  onOpenDetailedActivityFromLine,
+  activityCreatedLineIds,
+  highlightedLineIds,
+  searchFocusKey,
+  noteTemplates,
   activities,
   tags,
   customFields,
@@ -90,7 +105,7 @@ export function MobileLayout({
   const [activeTab, setActiveTab] = useState<'notes' | 'activities'>('notes');
 
   return (
-    <div className="min-h-screen flex flex-col bg-background">
+    <div className="flex h-screen flex-col overflow-hidden bg-background">
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2 border-b bg-muted/30">
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -108,7 +123,7 @@ export function MobileLayout({
       </div>
 
       {/* Tabs */}
-      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'notes' | 'activities')} className="flex-1 flex flex-col">
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'notes' | 'activities')} className="flex min-h-0 flex-1 flex-col">
         <TabsList className="grid w-full grid-cols-2 rounded-none border-b">
           <TabsTrigger value="notes" className="flex items-center gap-2 data-[state=active]:bg-background">
             <FileText className="h-4 w-4" />
@@ -120,30 +135,37 @@ export function MobileLayout({
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="notes" className="flex-1 m-0 overflow-hidden">
-          <NoteEditor
-            currentDate={currentDate}
-            note={note}
-            onDateChange={onDateChange}
-            onUpdateLine={onUpdateLine}
-            onAddLine={onAddLine}
-            onDeleteLine={onDeleteLine}
-            onToggleCollapse={onToggleCollapse}
-            onUpdateIndent={onUpdateIndent}
-            onSearch={onSearch}
-            allDatesWithNotes={allDatesWithNotes}
-            saveStatus={saveStatus}
-            hasUnsavedChanges={hasUnsavedChanges}
-            autosaveEnabled={autosaveEnabled}
-            onSave={onSave}
-            onUndo={onUndo}
-            onRedo={onRedo}
-            canUndo={canUndo}
-            canRedo={canRedo}
-          />
+        <TabsContent value="notes" className="m-0 min-h-0 flex-1 overflow-hidden">
+          <div className="flex h-full min-h-0 flex-col overflow-hidden">
+            <NoteEditor
+              currentDate={currentDate}
+              note={note}
+              onDateChange={onDateChange}
+              onUpdateLine={onUpdateLine}
+              onAddLine={onAddLine}
+              onDeleteLine={onDeleteLine}
+              onToggleCollapse={onToggleCollapse}
+              onUpdateIndent={onUpdateIndent}
+              saveStatus={saveStatus}
+              hasUnsavedChanges={hasUnsavedChanges}
+              autosaveEnabled={autosaveEnabled}
+              onSave={onSave}
+              onUndo={onUndo}
+              onRedo={onRedo}
+              canUndo={canUndo}
+              canRedo={canRedo}
+              onCreateActivityFromLine={onCreateActivityFromLine}
+              onOpenDetailedActivityFromLine={onOpenDetailedActivityFromLine}
+              activityCreatedLineIds={activityCreatedLineIds}
+              highlightedLineIds={highlightedLineIds}
+              searchFocusKey={searchFocusKey}
+              noteTemplates={noteTemplates}
+            />
+            <NoteFormattingHints />
+          </div>
         </TabsContent>
 
-        <TabsContent value="activities" className="flex-1 m-0 overflow-hidden">
+        <TabsContent value="activities" className="m-0 min-h-0 flex-1 overflow-hidden">
           <ActivityList
             activities={activities}
             tags={tags}

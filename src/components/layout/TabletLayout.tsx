@@ -1,11 +1,12 @@
 import { NoteEditor } from '@/components/notes/NoteEditor';
+import { NoteFormattingHints } from '@/components/notes/NoteFormattingHints';
 import { NotesSidebar } from '@/components/notes/NotesSidebar';
 import { ActivityList } from '@/components/activities/ActivityList';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { LogOut, User, Menu } from 'lucide-react';
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@/components/ui/resizable';
-import { Activity, CustomField, Tag, SortOption, DailyNote, LineType, ActivityListDisplaySettings, FilterConfig, ActivityCreationMode } from '@/types';
+import { Activity, CustomField, Tag, SortOption, DailyNote, NoteSearchResult, LineType, ActivityListDisplaySettings, FilterConfig, ActivityCreationMode, NoteLine, NoteTemplate } from '@/types';
 import { SaveStatus } from '@/hooks/useNotes';
 import { useState } from 'react';
 
@@ -23,7 +24,8 @@ interface TabletLayoutProps {
   onDeleteLine: (lineId: string) => void;
   onToggleCollapse: (lineId: string) => void;
   onUpdateIndent: (lineId: string, delta: number) => void;
-  onSearch: (query: string) => DailyNote[];
+  onSearch: (query: string) => NoteSearchResult[];
+  onSelectSearchResult?: (result: NoteSearchResult) => void;
   allDatesWithNotes: string[];
   saveStatus: SaveStatus;
   hasUnsavedChanges: boolean;
@@ -33,6 +35,12 @@ interface TabletLayoutProps {
   onRedo: () => void;
   canUndo: boolean;
   canRedo: boolean;
+  onCreateActivityFromLine?: (line: NoteLine) => void;
+  onOpenDetailedActivityFromLine?: (line: NoteLine) => void;
+  activityCreatedLineIds?: string[];
+  highlightedLineIds?: string[];
+  searchFocusKey?: string | null;
+  noteTemplates?: NoteTemplate[];
   
   // Activities
   activities: { active: Activity[]; completed: Activity[] };
@@ -40,7 +48,7 @@ interface TabletLayoutProps {
   customFields: CustomField[];
   listDisplay: ActivityListDisplaySettings;
   savedFilters: FilterConfig[];
-  onAddActivity: (title: string, tags?: string[]) => Promise<Activity | null> | Activity | null;
+  onAddActivity: (title: string, tags?: string[], customFields?: Activity['customFields']) => Promise<Activity | null> | Activity | null;
   onUpdateActivity: (id: string, updates: Partial<Activity>) => void;
   onDeleteActivity: (id: string) => void;
   onToggleComplete: (id: string) => void;
@@ -64,6 +72,7 @@ export function TabletLayout({
   onToggleCollapse,
   onUpdateIndent,
   onSearch,
+  onSelectSearchResult,
   allDatesWithNotes,
   saveStatus,
   hasUnsavedChanges,
@@ -73,6 +82,12 @@ export function TabletLayout({
   onRedo,
   canUndo,
   canRedo,
+  onCreateActivityFromLine,
+  onOpenDetailedActivityFromLine,
+  activityCreatedLineIds,
+  highlightedLineIds,
+  searchFocusKey,
+  noteTemplates,
   activities,
   tags,
   customFields,
@@ -92,7 +107,7 @@ export function TabletLayout({
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
-    <div className="min-h-screen flex flex-col bg-background">
+    <div className="flex h-screen flex-col overflow-hidden bg-background">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-2 border-b bg-muted/30">
         <div className="flex items-center gap-2">
@@ -111,6 +126,10 @@ export function TabletLayout({
                   setSidebarOpen(false);
                 }}
                 onSearch={onSearch}
+                onSelectSearchResult={(result) => {
+                  onSelectSearchResult?.(result);
+                  setSidebarOpen(false);
+                }}
               />
             </SheetContent>
           </Sheet>
@@ -126,30 +145,37 @@ export function TabletLayout({
       </div>
 
       {/* Main content - Two panels */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="min-h-0 flex flex-1 overflow-hidden">
         <ResizablePanelGroup direction="horizontal" className="flex-1">
           {/* Note Editor */}
           <ResizablePanel defaultSize={55} minSize={35}>
-            <NoteEditor
-              currentDate={currentDate}
-              note={note}
-              onDateChange={onDateChange}
-              onUpdateLine={onUpdateLine}
-              onAddLine={onAddLine}
-              onDeleteLine={onDeleteLine}
-              onToggleCollapse={onToggleCollapse}
-              onUpdateIndent={onUpdateIndent}
-              onSearch={onSearch}
-              allDatesWithNotes={allDatesWithNotes}
-              saveStatus={saveStatus}
-              hasUnsavedChanges={hasUnsavedChanges}
-              autosaveEnabled={autosaveEnabled}
-              onSave={onSave}
-              onUndo={onUndo}
-              onRedo={onRedo}
-              canUndo={canUndo}
-              canRedo={canRedo}
-            />
+            <div className="flex h-full min-h-0 flex-col overflow-hidden">
+              <NoteEditor
+                currentDate={currentDate}
+                note={note}
+                onDateChange={onDateChange}
+                onUpdateLine={onUpdateLine}
+                onAddLine={onAddLine}
+                onDeleteLine={onDeleteLine}
+                onToggleCollapse={onToggleCollapse}
+                onUpdateIndent={onUpdateIndent}
+                saveStatus={saveStatus}
+                hasUnsavedChanges={hasUnsavedChanges}
+                autosaveEnabled={autosaveEnabled}
+                onSave={onSave}
+                onUndo={onUndo}
+                onRedo={onRedo}
+                canUndo={canUndo}
+                canRedo={canRedo}
+                onCreateActivityFromLine={onCreateActivityFromLine}
+                onOpenDetailedActivityFromLine={onOpenDetailedActivityFromLine}
+                activityCreatedLineIds={activityCreatedLineIds}
+                highlightedLineIds={highlightedLineIds}
+                searchFocusKey={searchFocusKey}
+                noteTemplates={noteTemplates}
+              />
+              <NoteFormattingHints />
+            </div>
           </ResizablePanel>
 
           <ResizableHandle withHandle />

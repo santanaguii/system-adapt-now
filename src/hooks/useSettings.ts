@@ -1,7 +1,9 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { AppSettings, CustomField, Tag, SortOption, ActivityCreationMode, ActivityListDisplaySettings, FilterConfig, SortConfig } from '@/types';
+import { AppSettings, CustomField, Tag, SortOption, ActivityCreationMode, ActivityListDisplaySettings, FilterConfig, SortConfig, NoteTemplate } from '@/types';
 import { useAuthContext } from '@/contexts/AuthContext';
+import { defaultListDisplay, defaultSortConfig, normalizeListDisplaySettings, upsertUserSettings } from '@/lib/user-settings';
+import { defaultNoteTemplates, readNoteTemplates, writeNoteTemplates } from '@/lib/note-templates';
 
 // Type definitions for external Supabase tables
 interface TagRow {
@@ -38,21 +40,10 @@ interface UserSettingsRow {
   saved_sort?: SortConfig;
 }
 
-const defaultListDisplay: ActivityListDisplaySettings = {
-  showTags: true,
-  showDueDate: true,
-  showPriority: true,
-  visibleFieldIds: [],
-};
-
-const defaultSortConfig: SortConfig = {
-  type: 'manual',
-  direction: 'asc',
-};
-
 const defaultSettings: AppSettings = {
   customFields: [],
   tags: [],
+  noteTemplates: defaultNoteTemplates,
   allowReopenCompleted: true,
   defaultSort: 'manual',
   activityCreationMode: 'simple',
@@ -66,6 +57,7 @@ export function useSettings() {
   const { user, isAuthenticated } = useAuthContext();
   const [tags, setTags] = useState<Tag[]>([]);
   const [customFields, setCustomFields] = useState<CustomField[]>([]);
+  const [noteTemplates, setNoteTemplates] = useState<NoteTemplate[]>(defaultNoteTemplates);
   const [generalSettings, setGeneralSettings] = useState<{
     allowReopenCompleted: boolean;
     defaultSort: SortOption;
@@ -90,6 +82,7 @@ export function useSettings() {
     if (!isAuthenticated || !user) {
       setTags([]);
       setCustomFields([]);
+      setNoteTemplates(defaultNoteTemplates);
       setGeneralSettings({
         allowReopenCompleted: true,
         defaultSort: 'manual',
@@ -157,11 +150,13 @@ export function useSettings() {
             defaultSort: settingsData.default_sort as SortOption,
             activityCreationMode: settingsData.activity_creation_mode as ActivityCreationMode,
             autosaveEnabled: settingsData.autosave_enabled ?? true,
-            listDisplay: settingsData.list_display ?? defaultListDisplay,
+            listDisplay: normalizeListDisplaySettings(settingsData.list_display as Partial<ActivityListDisplaySettings> | null),
             savedFilters: settingsData.saved_filters ?? [],
             savedSort: settingsData.saved_sort ?? defaultSortConfig,
           });
         }
+
+        setNoteTemplates(readNoteTemplates(user.id));
       } catch (error) {
         console.error('Error loading settings:', error);
       } finally {
@@ -176,6 +171,7 @@ export function useSettings() {
   const settings = useMemo<AppSettings>(() => ({
     customFields,
     tags,
+    noteTemplates,
     allowReopenCompleted: generalSettings.allowReopenCompleted,
     defaultSort: generalSettings.defaultSort,
     activityCreationMode: generalSettings.activityCreationMode,
@@ -183,7 +179,7 @@ export function useSettings() {
     listDisplay: generalSettings.listDisplay,
     savedFilters: generalSettings.savedFilters,
     savedSort: generalSettings.savedSort,
-  }), [customFields, tags, generalSettings]);
+  }), [customFields, tags, noteTemplates, generalSettings]);
 
   // Tag operations
   const addTag = useCallback(async (tag: Omit<Tag, 'id'>) => {
@@ -266,7 +262,7 @@ export function useSettings() {
   }, [tags]);
 
   // Custom field operations
-  const addCustomField = useCallback(async (field: Omit<CustomField, 'id' | 'order'>) => {
+  const addCustomField = useCallback(async (field: Omit<CustomField, 'id'>) => {
     if (!user) return null;
 
     try {
@@ -283,7 +279,7 @@ export function useSettings() {
           default_value: field.defaultValue || null,
           validation: field.validation || null,
           display: field.display,
-          sort_order: customFields.length,
+          sort_order: field.order,
         } as never)
         .select()
         .single() as { data: CustomFieldRow | null; error: unknown };
@@ -313,7 +309,7 @@ export function useSettings() {
       console.error('Error adding custom field:', error);
       return null;
     }
-  }, [user, customFields.length]);
+  }, [user]);
 
   const updateCustomField = useCallback(async (id: string, updates: Partial<CustomField>) => {
     if (!user) return;
@@ -409,10 +405,7 @@ export function useSettings() {
       if (updates.activityCreationMode !== undefined) dbUpdates.activity_creation_mode = updates.activityCreationMode;
       if (updates.autosaveEnabled !== undefined) dbUpdates.autosave_enabled = updates.autosaveEnabled;
 
-      const { error } = await supabase
-        .from('user_settings' as never)
-        .update(dbUpdates as never)
-        .eq('user_id', user.id);
+      const { error } = await upsertUserSettings(user.id, dbUpdates);
 
       if (error) {
         console.error('Error updating general settings:', error);
@@ -433,11 +426,8 @@ export function useSettings() {
     }));
 
     try {
-      const newListDisplay = { ...generalSettings.listDisplay, ...updates };
-      const { error } = await supabase
-        .from('user_settings' as never)
-        .update({ list_display: newListDisplay } as never)
-        .eq('user_id', user.id);
+      const newListDisplay = normalizeListDisplaySettings({ ...generalSettings.listDisplay, ...updates });
+      const { error } = await upsertUserSettings(user.id, { list_display: newListDisplay });
 
       if (error) {
         console.error('Error updating list display settings:', error);
@@ -455,10 +445,7 @@ export function useSettings() {
     setGeneralSettings(prev => ({ ...prev, savedFilters: filters }));
 
     try {
-      const { error } = await supabase
-        .from('user_settings' as never)
-        .update({ saved_filters: filters } as never)
-        .eq('user_id', user.id);
+      const { error } = await upsertUserSettings(user.id, { saved_filters: filters });
 
       if (error) {
         console.error('Error updating saved filters:', error);
@@ -476,10 +463,7 @@ export function useSettings() {
     setGeneralSettings(prev => ({ ...prev, savedSort: sort }));
 
     try {
-      const { error } = await supabase
-        .from('user_settings' as never)
-        .update({ saved_sort: sort } as never)
-        .eq('user_id', user.id);
+      const { error } = await upsertUserSettings(user.id, { saved_sort: sort });
 
       if (error) {
         console.error('Error updating saved sort:', error);
@@ -488,6 +472,12 @@ export function useSettings() {
       console.error('Error updating saved sort:', error);
     }
   }, [user]);
+
+  const updateNoteTemplates = useCallback(async (templates: NoteTemplate[]) => {
+    const nextTemplates = templates.length > 0 ? templates : defaultNoteTemplates;
+    setNoteTemplates(nextTemplates);
+    writeNoteTemplates(user?.id, nextTemplates);
+  }, [user?.id]);
 
   return {
     settings,
@@ -504,5 +494,6 @@ export function useSettings() {
     updateListDisplay,
     updateSavedFilters,
     updateSavedSort,
+    updateNoteTemplates,
   };
 }

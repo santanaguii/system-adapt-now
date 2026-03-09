@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import type { User as SupabaseUser } from '@supabase/supabase-js';
+import { buildDefaultUserSettings } from '@/lib/user-settings';
 
 export interface User {
   id: string;
@@ -99,14 +100,6 @@ interface CustomFieldRow {
   validation: unknown;
   display: string;
   sort_order: number;
-}
-
-interface UserSettingsRow {
-  id: string;
-  user_id: string;
-  allow_reopen_completed: boolean;
-  default_sort: string;
-  activity_creation_mode: string;
 }
 
 export function useAuth() {
@@ -249,12 +242,9 @@ export function useAuth() {
       await supabase.from('custom_fields' as never).insert(fieldsToInsert as never);
 
       // Create default settings
-      await supabase.from('user_settings' as never).insert({
-        user_id: userId,
-        allow_reopen_completed: true,
-        default_sort: 'manual',
-        activity_creation_mode: 'simple',
-      } as never);
+      await supabase.from('user_settings' as never).insert(
+        buildDefaultUserSettings(userId) as never
+      );
     } catch (error) {
       console.error('Error creating default data:', error);
     }
@@ -426,26 +416,31 @@ export function useAuth() {
     }
   }, []);
 
-  const resetPassword = useCallback(async (username: string, newPassword: string): Promise<{ success: boolean; error?: string }> => {
+  const resetPassword = useCallback(async (
+    username: string,
+    securityAnswer: string,
+    newPassword: string
+  ): Promise<{ success: boolean; error?: string }> => {
     if (newPassword.length < 6) {
       return { success: false, error: 'Senha deve ter pelo menos 6 caracteres' };
     }
 
     try {
-      // Get user id by username
-      const { data: userId, error: userIdError } = await supabase
-        .rpc('get_user_id_by_username' as never, { p_username: username } as never) as { data: string | null; error: unknown };
-
-      if (userIdError || !userId) {
-        return { success: false, error: 'Usuário não encontrado' };
-      }
-
-      // Update password via current session
-      const { error } = await supabase.auth.updateUser({ password: newPassword });
+      const { data, error } = await supabase.functions.invoke('reset-password', {
+        body: {
+          username: username.trim(),
+          securityAnswer,
+          newPassword,
+        },
+      });
 
       if (error) {
         console.error('Error resetting password:', error);
         return { success: false, error: 'Erro ao redefinir senha' };
+      }
+
+      if (data?.error) {
+        return { success: false, error: data.error };
       }
 
       return { success: true };

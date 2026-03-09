@@ -11,7 +11,7 @@ interface AuthContextType {
   signOut: () => void;
   getSecurityQuestion: (username: string) => Promise<string | null>;
   verifySecurityAnswer: (username: string, answer: string) => Promise<boolean>;
-  resetPassword: (username: string, newPassword: string) => Promise<{ success: boolean; error?: string }>;
+  resetPassword: (username: string, securityAnswer: string, newPassword: string) => Promise<{ success: boolean; error?: string }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);

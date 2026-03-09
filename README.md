@@ -64,6 +64,18 @@ This project is built with:
 
 Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
 
+## Supabase function
+
+The password recovery flow now depends on the Edge Function in `supabase/functions/reset-password/index.ts`.
+
+Deploy it before testing password reset:
+
+```sh
+supabase functions deploy reset-password
+```
+
+The function requires `SUPABASE_SERVICE_ROLE_KEY` in the Supabase project secrets because it uses `auth.admin.updateUserById`.
+
 ## Can I connect a custom domain to my Lovable project?
 
 Yes, you can!

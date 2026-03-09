@@ -1,8 +1,9 @@
 import { useCallback, useMemo, useState, useRef, useEffect } from 'react';
-import { DailyNote, NoteLine, LineType } from '@/types';
+import { DailyNote, NoteLine, LineType, NoteSearchResult } from '@/types';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuthContext } from '@/contexts/AuthContext';
 import { format } from 'date-fns';
+import { cloneNotesSnapshot, upsertNoteSnapshot } from './useNotes.utils';
 
 const generateId = () => crypto.randomUUID();
 
@@ -34,6 +35,7 @@ interface NoteLineRow {
 export function useNotes(autosaveEnabled: boolean = true) {
   const { user, isAuthenticated } = useAuthContext();
   const [notes, setNotes] = useState<DailyNote[]>([]);
+  const [persistedNotes, setPersistedNotes] = useState<DailyNote[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
@@ -43,13 +45,28 @@ export function useNotes(autosaveEnabled: boolean = true) {
   // Undo/Redo history (local only)
   const [history, setHistory] = useState<HistoryState[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
+  const historyIndexRef = useRef(-1);
   const isUndoRedoRef = useRef(false);
   const skipHistoryRef = useRef(false);
+
+  const resetHistory = useCallback((snapshot: DailyNote[]) => {
+    const clonedSnapshot = cloneNotesSnapshot(snapshot);
+    const nextHistory = [{ notes: clonedSnapshot, timestamp: Date.now() }];
+    historyIndexRef.current = 0;
+    setHistory(nextHistory);
+    setHistoryIndex(0);
+  }, []);
 
   // Load notes from database
   useEffect(() => {
     if (!isAuthenticated || !user) {
+      skipHistoryRef.current = true;
       setNotes([]);
+      setPersistedNotes([]);
+      pendingSavesRef.current.clear();
+      setHasUnsavedChanges(false);
+      setSaveStatus('idle');
+      resetHistory([]);
       setIsLoading(false);
       return;
     }
@@ -74,7 +91,13 @@ export function useNotes(autosaveEnabled: boolean = true) {
         const noteIds = notesData.map(n => n.id);
         
         if (noteIds.length === 0) {
+          skipHistoryRef.current = true;
           setNotes([]);
+          setPersistedNotes([]);
+          pendingSavesRef.current.clear();
+          setHasUnsavedChanges(false);
+          setSaveStatus('idle');
+          resetHistory([]);
           setIsLoading(false);
           return;
         }
@@ -119,8 +142,14 @@ export function useNotes(autosaveEnabled: boolean = true) {
           }
         });
 
+        const snapshot = cloneNotesSnapshot(loadedNotes);
         skipHistoryRef.current = true;
-        setNotes(loadedNotes);
+        setNotes(snapshot);
+        setPersistedNotes(snapshot);
+        pendingSavesRef.current.clear();
+        setHasUnsavedChanges(false);
+        setSaveStatus('idle');
+        resetHistory(snapshot);
       } catch (error) {
         console.error('Error loading notes:', error);
       } finally {
@@ -129,7 +158,7 @@ export function useNotes(autosaveEnabled: boolean = true) {
     };
 
     loadNotes();
-  }, [isAuthenticated, user]);
+  }, [isAuthenticated, user, resetHistory]);
 
   // Track notes changes for history
   useEffect(() => {
@@ -143,43 +172,52 @@ export function useNotes(autosaveEnabled: boolean = true) {
       return;
     }
     
-    const newState: HistoryState = { notes: JSON.parse(JSON.stringify(notes)), timestamp: Date.now() };
+    if (historyIndexRef.current < 0) {
+      return;
+    }
+
+    const newState: HistoryState = { notes: cloneNotesSnapshot(notes), timestamp: Date.now() };
     setHistory((prev) => {
-      const newHistory = prev.slice(0, historyIndex + 1);
+      const newHistory = prev.slice(0, historyIndexRef.current + 1);
       newHistory.push(newState);
       // Keep only last 50 states
       if (newHistory.length > 50) {
         newHistory.shift();
       }
+      historyIndexRef.current = newHistory.length - 1;
+      setHistoryIndex(historyIndexRef.current);
       return newHistory;
     });
-    setHistoryIndex((prev) => Math.min(prev + 1, 49));
   }, [notes]);
 
   const undo = useCallback(() => {
-    if (historyIndex > 0) {
+    if (historyIndexRef.current > 0) {
       isUndoRedoRef.current = true;
-      const prevState = history[historyIndex - 1];
+      const prevIndex = historyIndexRef.current - 1;
+      const prevState = history[prevIndex];
       setNotes(prevState.notes);
-      setHistoryIndex((prev) => prev - 1);
+      historyIndexRef.current = prevIndex;
+      setHistoryIndex(prevIndex);
     }
-  }, [history, historyIndex]);
+  }, [history]);
 
   const redo = useCallback(() => {
-    if (historyIndex < history.length - 1) {
+    if (historyIndexRef.current < history.length - 1) {
       isUndoRedoRef.current = true;
-      const nextState = history[historyIndex + 1];
+      const nextIndex = historyIndexRef.current + 1;
+      const nextState = history[nextIndex];
       setNotes(nextState.notes);
-      setHistoryIndex((prev) => prev + 1);
+      historyIndexRef.current = nextIndex;
+      setHistoryIndex(nextIndex);
     }
-  }, [history, historyIndex]);
+  }, [history]);
 
   const canUndo = historyIndex > 0;
   const canRedo = historyIndex < history.length - 1;
 
   // Debounced save to database
   const persistNote = useCallback(async (note: DailyNote) => {
-    if (!user) return;
+    if (!user) return false;
 
     try {
       // Upsert the note
@@ -196,14 +234,20 @@ export function useNotes(autosaveEnabled: boolean = true) {
       if (noteError || !noteData) {
         console.error('Error saving note:', noteError);
         setSaveStatus('error');
-        return;
+        return false;
       }
 
       // Delete existing lines and insert new ones
-      await supabase
+      const { error: deleteError } = await supabase
         .from('note_lines' as never)
         .delete()
         .eq('note_id', noteData.id);
+
+      if (deleteError) {
+        console.error('Error deleting note lines:', deleteError);
+        setSaveStatus('error');
+        return false;
+      }
 
       // Insert new lines
       if (note.lines.length > 0) {
@@ -224,17 +268,47 @@ export function useNotes(autosaveEnabled: boolean = true) {
         if (linesError) {
           console.error('Error saving note lines:', linesError);
           setSaveStatus('error');
-          return;
+          return false;
         }
       }
 
+      const persistedNote = {
+        ...note,
+        updatedAt: new Date(),
+      };
+      const persistedSnapshot = cloneNotesSnapshot([persistedNote])[0];
+      setPersistedNotes((prev) => upsertNoteSnapshot(prev, persistedSnapshot));
       setSaveStatus('saved');
       setTimeout(() => setSaveStatus('idle'), 2000);
+      return true;
     } catch (error) {
       console.error('Error persisting note:', error);
       setSaveStatus('error');
+      return false;
     }
   }, [user]);
+
+  const flushPendingSaves = useCallback(async () => {
+    const pendingEntries = Array.from(pendingSavesRef.current.entries());
+
+    if (pendingEntries.length === 0) {
+      return true;
+    }
+
+    let allSaved = true;
+
+    for (const [dateKey, noteToSave] of pendingEntries) {
+      const didSave = await persistNote(noteToSave);
+      if (didSave) {
+        pendingSavesRef.current.delete(dateKey);
+      } else {
+        allSaved = false;
+      }
+    }
+
+    setHasUnsavedChanges(pendingSavesRef.current.size > 0);
+    return allSaved;
+  }, [persistNote]);
 
   const triggerSave = useCallback((note: DailyNote) => {
     if (!user) return;
@@ -257,15 +331,10 @@ export function useNotes(autosaveEnabled: boolean = true) {
     
     // Debounce save by 1 second
     saveTimeoutRef.current = setTimeout(async () => {
-      const pendingSaves = Array.from(pendingSavesRef.current.values());
-      pendingSavesRef.current.clear();
-
-      for (const noteToSave of pendingSaves) {
-        await persistNote(noteToSave);
-      }
-      setHasUnsavedChanges(false);
+      await flushPendingSaves();
+      saveTimeoutRef.current = null;
     }, 1000);
-  }, [user, persistNote, autosaveEnabled]);
+  }, [user, autosaveEnabled, flushPendingSaves]);
 
   const getNote = useCallback((date: Date): DailyNote => {
     const dateKey = format(date, 'yyyy-MM-dd');
@@ -280,16 +349,11 @@ export function useNotes(autosaveEnabled: boolean = true) {
   }, [notes]);
 
   const saveNote = useCallback((note: DailyNote) => {
+    const nextNote = { ...note, updatedAt: new Date() };
     setNotes((prev) => {
-      const index = prev.findIndex((n) => n.date === note.date);
-      if (index >= 0) {
-        const updated = [...prev];
-        updated[index] = { ...note, updatedAt: new Date() };
-        return updated;
-      }
-      return [...prev, { ...note, updatedAt: new Date() }];
+      return upsertNoteSnapshot(prev, nextNote);
     });
-    triggerSave(note);
+    triggerSave(nextNote);
   }, [triggerSave]);
 
   const updateLine = useCallback((date: Date, lineId: string, updates: Partial<NoteLine>) => {
@@ -426,12 +490,56 @@ export function useNotes(autosaveEnabled: boolean = true) {
     });
   }, [triggerSave]);
 
-  const searchNotes = useCallback((query: string) => {
-    if (!query.trim()) return [];
-    const lowerQuery = query.toLowerCase();
-    return notes.filter((note) =>
-      note.lines.some((line) => line.content.toLowerCase().includes(lowerQuery))
-    );
+  const searchNotes = useCallback((query: string): NoteSearchResult[] => {
+    const trimmedQuery = query.trim();
+    if (!trimmedQuery) return [];
+
+    const normalizedQuery = trimmedQuery.toLowerCase();
+    const terms = [normalizedQuery];
+
+    if (terms.length === 0) {
+      return [];
+    }
+
+    return notes.flatMap((note) => note.lines.flatMap((line) => {
+      const content = line.content;
+      const lowerContent = content.toLowerCase();
+
+      if (!lowerContent.trim()) {
+        return [];
+      }
+
+      const matches: NoteSearchResult[] = [];
+
+      terms.forEach((term) => {
+        let searchFrom = 0;
+
+        while (searchFrom <= lowerContent.length) {
+          const matchIndex = lowerContent.indexOf(term, searchFrom);
+          if (matchIndex === -1) {
+            break;
+          }
+
+          const snippetStart = Math.max(0, matchIndex - 28);
+          const snippetEnd = Math.min(content.length, matchIndex + term.length + 44);
+          const rawSnippet = content.slice(snippetStart, snippetEnd).trim();
+          const snippet = `${snippetStart > 0 ? '...' : ''}${rawSnippet}${snippetEnd < content.length ? '...' : ''}`;
+
+          matches.push({
+            date: note.date,
+            matchedLineIds: [line.id],
+            matchedTerms: [term],
+            snippet,
+            primaryLineId: line.id,
+            matchStart: matchIndex,
+          });
+
+          searchFrom = matchIndex + Math.max(term.length, 1);
+        }
+      });
+
+      return matches;
+    }));
   }, [notes]);
 
   const allDatesWithNotes = useMemo(() => {
@@ -457,21 +565,25 @@ export function useNotes(autosaveEnabled: boolean = true) {
     }
 
     setSaveStatus('saving');
-    pendingSavesRef.current.clear();
+    pendingSavesRef.current = new Map(notesToSave.map((note) => [note.date, note]));
 
-    for (const noteToSave of notesToSave) {
-      await persistNote(noteToSave);
-    }
-    
-    setHasUnsavedChanges(false);
-  }, [user, persistNote, notes, hasUnsavedChanges]);
+    await flushPendingSaves();
+  }, [user, notes, hasUnsavedChanges, flushPendingSaves]);
 
   // Discard all pending changes
   const discardChanges = useCallback(() => {
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+      saveTimeoutRef.current = null;
+    }
     pendingSavesRef.current.clear();
+    skipHistoryRef.current = true;
+    const snapshot = cloneNotesSnapshot(persistedNotes);
+    setNotes(snapshot);
     setHasUnsavedChanges(false);
     setSaveStatus('idle');
-  }, []);
+    resetHistory(snapshot);
+  }, [persistedNotes, resetHistory]);
 
   return {
     notes,

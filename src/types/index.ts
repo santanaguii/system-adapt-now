@@ -39,6 +39,31 @@ export interface Tag {
   color: string;
 }
 
+export type JsonPrimitive = string | number | boolean | null;
+export type JsonValue = JsonPrimitive | JsonObject | JsonValue[];
+export interface JsonObject {
+  [key: string]: JsonValue;
+}
+
+export interface ActivitySubtask {
+  id: string;
+  title: string;
+  completed: boolean;
+}
+
+export type RecurrenceFrequency = 'daily' | 'weekdays' | 'weekly' | 'monthly';
+
+export interface ActivityRecurrence {
+  frequency: RecurrenceFrequency;
+  interval?: number;
+  weekdays?: number[];
+  dayOfMonth?: number;
+  nextDate?: string | null;
+  lastGeneratedAt?: string | null;
+}
+
+export type ActivityBucket = 'inbox' | 'today' | 'upcoming' | 'someday';
+
 export type ActivityStatus = 'open' | 'done';
 
 export interface Activity {
@@ -48,7 +73,7 @@ export interface Activity {
   status: ActivityStatus;
   completed: boolean;
   tags: string[];
-  customFields: Record<string, string | number | boolean | Date | string[] | null>;
+  customFields: Record<string, JsonValue>;
   order: number;
   createdAt: Date;
   updatedAt: Date;
@@ -69,6 +94,21 @@ export interface DailyNote {
   date: string;
   lines: NoteLine[];
   updatedAt: Date;
+}
+
+export interface NoteTemplate {
+  id: string;
+  name: string;
+  lines: Array<Pick<NoteLine, 'content' | 'type'>>;
+}
+
+export interface NoteSearchResult {
+  date: string;
+  matchedLineIds: string[];
+  matchedTerms: string[];
+  snippet: string;
+  primaryLineId: string;
+  matchStart: number;
 }
 
 export type SortOption = 'manual' | 'dueDate_asc' | 'dueDate_desc' | 'priority_asc' | 'priority_desc' | 'createdAt_desc' | 'tag' | 'field';
@@ -92,12 +132,26 @@ export interface AppearanceSettings {
   mobileLayoutMode: MobileLayoutMode;
 }
 
+export interface ActivityFormLayoutBlock {
+  id: string;
+  contentKey: string;
+  colStart: number;
+  rowStart: number;
+  colSpan: number;
+  rowSpan: number;
+}
+
+export interface ActivityFormLayoutSettings {
+  blocks: ActivityFormLayoutBlock[];
+}
+
 // Activity list display settings
 export interface ActivityListDisplaySettings {
   showTags: boolean;
   showDueDate: boolean;
   showPriority: boolean;
   visibleFieldIds: string[]; // IDs of custom fields to show in list view
+  formLayout: ActivityFormLayoutSettings;
 }
 
 // Filter configuration
@@ -121,6 +175,7 @@ export interface SortConfig {
 export interface AppSettings {
   customFields: CustomField[];
   tags: Tag[];
+  noteTemplates: NoteTemplate[];
   allowReopenCompleted: boolean;
   defaultSort: SortOption;
   activityCreationMode: ActivityCreationMode;
