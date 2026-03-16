@@ -7,6 +7,7 @@ interface AppearanceContextType {
   appearance: AppearanceSettings;
   isLoading: boolean;
   updateAppearance: (updates: Partial<AppearanceSettings>) => Promise<void>;
+  setPreviewAppearance: (appearance: AppearanceSettings | null) => void;
 }
 
 const AppearanceContext = createContext<AppearanceContextType | undefined>(undefined);

@@ -6,7 +6,20 @@ import { useAuthContext } from '@/contexts/AuthContext';
 import { useAppearanceContext } from '@/contexts/AppearanceContext';
 import { UnsavedChangesDialog } from '@/components/UnsavedChangesDialog';
 import { Button } from '@/components/ui/button';
-import { Activity, LineType, NoteLine, NoteSearchResult, SortOption } from '@/types';
+import { Brand } from '@/components/brand/Brand';
+import {
+  Activity,
+  AppearanceSettings,
+  CustomField,
+  FilterConfig,
+  LineType,
+  NoteLine,
+  NoteSearchResult,
+  NoteTemplate,
+  SortConfig,
+  SortOption,
+  Tag,
+} from '@/types';
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@/components/ui/resizable';
 import { Loader2, LogOut, User } from 'lucide-react';
 import { format } from 'date-fns';
@@ -28,6 +41,7 @@ const NoteFormattingHints = lazy(() =>
 const SettingsPanel = lazy(() =>
   import('@/components/settings/SettingsPanel').then((module) => ({ default: module.SettingsPanel }))
 );
+type SettingsPanelPreview = import('@/components/settings/SettingsPanel').SettingsPanelPreview;
 const ActivityCreateDialog = lazy(() =>
   import('@/components/activities/ActivityCreateDialog').then((module) => ({ default: module.ActivityCreateDialog }))
 );
@@ -47,6 +61,18 @@ const LayoutModeSelector = lazy(() =>
 const MOBILE_MAX = 768;
 const TABLET_MAX = 1024;
 
+interface SettingsPreviewState {
+  allowReopenCompleted: boolean;
+  autosaveEnabled: boolean;
+  appearance: AppearanceSettings;
+  listDisplay: import('@/types').ActivityListDisplaySettings;
+  savedFilters: FilterConfig[];
+  savedSort: SortConfig;
+  customFields: CustomField[];
+  tags: Tag[];
+  noteTemplates: NoteTemplate[];
+}
+
 function SectionFallback() {
   return (
     <div className="flex h-full min-h-[240px] items-center justify-center text-muted-foreground">
@@ -57,10 +83,11 @@ function SectionFallback() {
 
 const Index = () => {
   const { user, signOut } = useAuthContext();
-  const { appearance, updateAppearance } = useAppearanceContext();
+  const { appearance, updateAppearance, setPreviewAppearance } = useAppearanceContext();
   const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1200);
   const [currentDate, setCurrentDate] = useState(new Date());
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsPreview, setSettingsPreview] = useState<SettingsPreviewState | null>(null);
   const [sortOption, setSortOption] = useState<SortOption>('manual');
   const [pendingLineToConvert, setPendingLineToConvert] = useState<NoteLine | null>(null);
   const [showCreateDialogFromNote, setShowCreateDialogFromNote] = useState(false);
@@ -327,6 +354,26 @@ const Index = () => {
     setSelectedActivityFromNote(linkedActivity);
   }, [activityByLineId]);
 
+  const effectiveAppearance = settingsPreview?.appearance ?? appearance;
+  const effectiveTags = settingsPreview?.tags ?? settings.tags;
+  const effectiveCustomFields = settingsPreview?.customFields ?? settings.customFields;
+  const effectiveListDisplay = settingsPreview?.listDisplay ?? settings.listDisplay;
+  const effectiveSavedFilters = settingsPreview?.savedFilters ?? settings.savedFilters;
+  const effectiveNoteTemplates = settingsPreview?.noteTemplates ?? settings.noteTemplates;
+  const effectiveAllowReopenCompleted = settingsPreview?.allowReopenCompleted ?? settings.allowReopenCompleted;
+  const effectiveAutosaveEnabled = settingsPreview?.autosaveEnabled ?? settings.autosaveEnabled;
+
+  const handleCloseSettings = useCallback(() => {
+    setSettingsPreview(null);
+    setPreviewAppearance(null);
+    setSettingsOpen(false);
+  }, [setPreviewAppearance]);
+
+  const handleSettingsPreview = useCallback((preview: SettingsPanelPreview) => {
+    setSettingsPreview(preview);
+    setPreviewAppearance(preview.appearance);
+  }, [setPreviewAppearance]);
+
   const commonProps = {
     username: user?.username || '',
     onSignOut: signOut,
@@ -343,17 +390,17 @@ const Index = () => {
     allDatesWithNotes,
     saveStatus,
     hasUnsavedChanges,
-    autosaveEnabled: settings.autosaveEnabled,
+    autosaveEnabled: effectiveAutosaveEnabled,
     onSave: saveAllPending,
     onUndo: undo,
     onRedo: redo,
     canUndo,
     canRedo,
     activities: sortedActivities,
-    tags: settings.tags,
-    customFields: settings.customFields,
-    listDisplay: settings.listDisplay,
-    savedFilters: settings.savedFilters,
+    tags: effectiveTags,
+    customFields: effectiveCustomFields,
+    listDisplay: effectiveListDisplay,
+    savedFilters: effectiveSavedFilters,
     onAddActivity: addActivity,
     onUpdateActivity: updateActivity,
     onDeleteActivity: deleteActivity,
@@ -362,17 +409,16 @@ const Index = () => {
     onOpenSettings: () => setSettingsOpen(true),
     sortOption,
     onSortChange: setSortOption,
-    allowReopenCompleted: settings.allowReopenCompleted,
-    activityCreationMode: settings.activityCreationMode,
+    allowReopenCompleted: effectiveAllowReopenCompleted,
     onCreateActivityFromLine: handleOpenDetailedActivityFormFromLine,
     onOpenDetailedActivityFromLine: handleOpenDetailedActivityFormFromLine,
     activityCreatedLineIds,
     highlightedLineIds: activeNoteSearchFlash?.date === currentNote.date ? activeNoteSearchFlash.matchedLineIds : [],
     searchFocusKey: activeNoteSearchFlash ? activeNoteSearchFlash.flashKey : null,
-    noteTemplates: settings.noteTemplates,
+    noteTemplates: effectiveNoteTemplates,
   };
 
-  const useMobileLayout = isMobile && appearance.mobileLayoutMode === 'mobile';
+  const useMobileLayout = isMobile && effectiveAppearance.mobileLayoutMode === 'mobile';
   const showLayoutSelector = isMobile;
 
   const renderContent = () => {
@@ -384,7 +430,7 @@ const Index = () => {
       );
     }
 
-    if (isTablet || (isMobile && appearance.mobileLayoutMode === 'desktop')) {
+    if (isTablet || (isMobile && effectiveAppearance.mobileLayoutMode === 'desktop')) {
       return (
         <Suspense fallback={<SectionFallback />}>
           <TabletLayout {...commonProps} />
@@ -395,14 +441,17 @@ const Index = () => {
     return (
       <div className="flex h-screen flex-col overflow-hidden bg-background">
         <div className="shrink-0 flex items-center justify-between border-b bg-muted/30 px-4 py-2">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <User className="h-4 w-4" />
-            <span>{user?.username}</span>
+          <Brand compact />
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <User className="h-4 w-4" />
+              <span>{user?.username}</span>
+            </div>
+            <Button variant="ghost" size="sm" onClick={signOut} className="h-8">
+              <LogOut className="h-4 w-4 mr-2" />
+              Sair
+            </Button>
           </div>
-          <Button variant="ghost" size="sm" onClick={signOut} className="h-8">
-            <LogOut className="h-4 w-4 mr-2" />
-            Sair
-          </Button>
         </div>
 
         <div className="min-h-0 flex flex-1 overflow-hidden">
@@ -437,7 +486,7 @@ const Index = () => {
                         onUpdateIndent={handleUpdateIndent}
                         saveStatus={saveStatus}
                         hasUnsavedChanges={hasUnsavedChanges}
-                        autosaveEnabled={settings.autosaveEnabled}
+                        autosaveEnabled={effectiveAutosaveEnabled}
                         onSave={saveAllPending}
                         onUndo={undo}
                         onRedo={redo}
@@ -448,7 +497,7 @@ const Index = () => {
                         activityCreatedLineIds={activityCreatedLineIds}
                         highlightedLineIds={activeNoteSearchFlash?.date === currentNote.date ? activeNoteSearchFlash.matchedLineIds : []}
                         searchFocusKey={activeNoteSearchFlash ? activeNoteSearchFlash.flashKey : null}
-                        noteTemplates={settings.noteTemplates}
+                        noteTemplates={effectiveNoteTemplates}
                       />
                     </Suspense>
                   </ResizablePanel>
@@ -467,10 +516,10 @@ const Index = () => {
                 <ActivityList
                   currentDate={currentDate}
                   activities={sortedActivities}
-                  tags={settings.tags}
-                  customFields={settings.customFields}
-                  listDisplay={settings.listDisplay}
-                  savedFilters={settings.savedFilters}
+                  tags={effectiveTags}
+                  customFields={effectiveCustomFields}
+                  listDisplay={effectiveListDisplay}
+                  savedFilters={effectiveSavedFilters}
                   onAdd={addActivity}
                   onUpdate={updateActivity}
                   onDelete={deleteActivity}
@@ -479,8 +528,7 @@ const Index = () => {
                   onOpenSettings={() => setSettingsOpen(true)}
                   sortOption={sortOption}
                   onSortChange={setSortOption}
-                  allowReopenCompleted={settings.allowReopenCompleted}
-                  activityCreationMode={settings.activityCreationMode}
+                  allowReopenCompleted={effectiveAllowReopenCompleted}
                 />
               </Suspense>
             </ResizablePanel>
@@ -497,7 +545,7 @@ const Index = () => {
       {showLayoutSelector && (
         <Suspense fallback={null}>
           <LayoutModeSelector
-            currentMode={appearance.mobileLayoutMode}
+            currentMode={effectiveAppearance.mobileLayoutMode}
             onModeChange={(mode) => updateAppearance({ mobileLayoutMode: mode })}
           />
         </Suspense>
@@ -507,11 +555,10 @@ const Index = () => {
         {settingsOpen && (
           <SettingsPanel
             isOpen={settingsOpen}
-            onClose={() => setSettingsOpen(false)}
+            onClose={handleCloseSettings}
             customFields={settings.customFields}
             tags={settings.tags}
             noteTemplates={settings.noteTemplates}
-            activityCreationMode={settings.activityCreationMode}
             allowReopenCompleted={settings.allowReopenCompleted}
             autosaveEnabled={settings.autosaveEnabled}
             appearance={appearance}
@@ -530,6 +577,7 @@ const Index = () => {
             onUpdateFilters={updateSavedFilters}
             onUpdateSort={updateSavedSort}
             onUpdateNoteTemplates={updateNoteTemplates}
+            onPreviewChange={handleSettingsPreview}
           />
         )}
       </Suspense>
@@ -546,9 +594,9 @@ const Index = () => {
           <ActivityDetail
             activity={selectedActivityFromNote}
             activities={allActivities}
-            tags={settings.tags}
-            customFields={settings.customFields.filter((field) => field.enabled && (field.display === 'detail' || field.display === 'both'))}
-            formLayout={settings.listDisplay.formLayout}
+            tags={effectiveTags}
+            customFields={effectiveCustomFields.filter((field) => field.enabled && (field.display === 'detail' || field.display === 'both'))}
+            formLayout={effectiveListDisplay.formLayout}
             onSave={async (activityId, payload) => {
               updateActivity(activityId, {
                 title: payload.title,
@@ -585,9 +633,9 @@ const Index = () => {
             title="Transformar nota em atividade"
             submitLabel="Criar Atividade"
             activities={allActivities}
-            tags={settings.tags}
-            customFields={settings.customFields}
-            formLayout={settings.listDisplay.formLayout}
+            tags={effectiveTags}
+            customFields={effectiveCustomFields}
+            formLayout={effectiveListDisplay.formLayout}
             titleFieldMode="fixed-top"
             initialTitle={pendingLineInitialTitle}
             initialCustomFields={pendingLineInitialCustomFields ?? undefined}

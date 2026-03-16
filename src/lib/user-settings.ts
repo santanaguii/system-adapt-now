@@ -31,7 +31,7 @@ export function buildDefaultUserSettings(userId: string): TablesInsert<'user_set
     user_id: userId,
     allow_reopen_completed: true,
     default_sort: 'manual',
-    activity_creation_mode: 'simple',
+    activity_creation_mode: 'detailed',
     autosave_enabled: true,
     list_display: defaultListDisplay,
     saved_filters: [],

@@ -1,8 +1,7 @@
 import { useRef, useEffect, useState } from 'react';
 import { NoteLine as NoteLineType } from '@/types';
 import { cn } from '@/lib/utils';
-import { CheckCircle2, ChevronRight, ChevronDown, Link2 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { ChevronRight, ChevronDown } from 'lucide-react';
 
 interface NoteLineProps {
   line: NoteLineType;
@@ -17,8 +16,6 @@ interface NoteLineProps {
   onFocus: () => void;
   onToggleCollapse: () => void;
   hasChildren?: boolean;
-  onCreateActivity?: () => void;
-  activityCreated?: boolean;
   selectionRequest?: { start: number; end: number; key: number } | null;
 }
 
@@ -44,8 +41,6 @@ export function NoteLine({
   onFocus,
   onToggleCollapse,
   hasChildren = false,
-  onCreateActivity,
-  activityCreated = false,
   selectionRequest,
 }: NoteLineProps) {
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -158,35 +153,6 @@ export function NoteLine({
           rows={1}
         />
       </div>
-
-      {activityCreated ? (
-        <div
-          className={cn(
-            'pointer-events-none flex h-7 items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-2 text-emerald-700 transition-opacity dark:border-emerald-900/50 dark:bg-emerald-950/30 dark:text-emerald-300',
-            isFocused ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
-          )}
-          title="Atividade criada a partir desta nota"
-        >
-          <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
-          <span className="text-xs">Atividade criada</span>
-        </div>
-      ) : onCreateActivity && line.content.trim() ? (
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="h-7 gap-1 px-2 opacity-0 transition-opacity group-hover:opacity-100"
-          onMouseDown={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-          }}
-          onClick={onCreateActivity}
-          title="Virar atividade"
-        >
-          <Link2 className="h-4 w-4" />
-          <span className="text-xs">Virar atividade</span>
-        </Button>
-      ) : null}
     </div>
   );
 }

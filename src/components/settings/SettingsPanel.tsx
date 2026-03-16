@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  ActivityCreationMode,
   ActivityListDisplaySettings,
   AppearanceSettings,
   CustomField,
@@ -25,11 +24,22 @@ import { Switch } from '@/components/ui/switch';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Plus, Trash2, X } from 'lucide-react';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { AppearanceSettingsTab } from './AppearanceSettings';
 import { ListDisplaySettingsTab } from './ListDisplaySettings';
 import { ActivityFormLayoutSettingsTab } from './ActivityFormLayoutSettings';
 import { NoteTemplateSettingsTab } from './NoteTemplateSettings';
+
+export interface SettingsPanelPreview {
+  allowReopenCompleted: boolean;
+  autosaveEnabled: boolean;
+  appearance: AppearanceSettings;
+  listDisplay: ActivityListDisplaySettings;
+  savedFilters: FilterConfig[];
+  savedSort: SortConfig;
+  customFields: CustomField[];
+  tags: Tag[];
+  noteTemplates: NoteTemplate[];
+}
 
 interface SettingsPanelProps {
   isOpen: boolean;
@@ -37,7 +47,6 @@ interface SettingsPanelProps {
   customFields: CustomField[];
   tags: Tag[];
   noteTemplates: NoteTemplate[];
-  activityCreationMode: ActivityCreationMode;
   allowReopenCompleted: boolean;
   autosaveEnabled: boolean;
   appearance: AppearanceSettings;
@@ -51,7 +60,6 @@ interface SettingsPanelProps {
   onUpdateTag: (id: string, updates: Partial<Tag>) => Promise<void> | void;
   onDeleteTag: (id: string) => Promise<void> | void;
   onUpdateGeneralSettings: (updates: {
-    activityCreationMode?: ActivityCreationMode;
     allowReopenCompleted?: boolean;
     autosaveEnabled?: boolean;
   }) => Promise<void> | void;
@@ -60,6 +68,7 @@ interface SettingsPanelProps {
   onUpdateFilters: (filters: FilterConfig[]) => Promise<void> | void;
   onUpdateSort: (sort: SortConfig) => Promise<void> | void;
   onUpdateNoteTemplates: (templates: NoteTemplate[]) => Promise<void> | void;
+  onPreviewChange?: (preview: SettingsPanelPreview) => void;
 }
 
 const fieldTypes: { value: FieldType; label: string }[] = [
@@ -141,7 +150,6 @@ export function SettingsPanel({
   customFields,
   tags,
   noteTemplates,
-  activityCreationMode,
   allowReopenCompleted,
   autosaveEnabled,
   appearance,
@@ -160,8 +168,8 @@ export function SettingsPanel({
   onUpdateFilters,
   onUpdateSort,
   onUpdateNoteTemplates,
+  onPreviewChange,
 }: SettingsPanelProps) {
-  const [draftActivityCreationMode, setDraftActivityCreationMode] = useState<ActivityCreationMode>(activityCreationMode);
   const [draftAllowReopenCompleted, setDraftAllowReopenCompleted] = useState(allowReopenCompleted);
   const [draftAutosaveEnabled, setDraftAutosaveEnabled] = useState(autosaveEnabled);
   const [draftAppearance, setDraftAppearance] = useState<AppearanceSettings>(appearance);
@@ -184,7 +192,6 @@ export function SettingsPanel({
       return;
     }
 
-    setDraftActivityCreationMode(activityCreationMode);
     setDraftAllowReopenCompleted(allowReopenCompleted);
     setDraftAutosaveEnabled(autosaveEnabled);
     setDraftAppearance(appearance);
@@ -202,7 +209,6 @@ export function SettingsPanel({
     setNewTagColor(tagColors[0]);
     setIsSaving(false);
   }, [
-    activityCreationMode,
     allowReopenCompleted,
     appearance,
     autosaveEnabled,
@@ -219,6 +225,36 @@ export function SettingsPanel({
     () => [...draftFields].sort((a, b) => a.order - b.order),
     [draftFields]
   );
+
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
+    onPreviewChange?.({
+      allowReopenCompleted: draftAllowReopenCompleted,
+      autosaveEnabled: draftAutosaveEnabled,
+      appearance: draftAppearance,
+      listDisplay: draftListDisplay,
+      savedFilters: draftSavedFilters,
+      savedSort: draftSavedSort,
+      customFields: orderedFields,
+      tags: draftTags,
+      noteTemplates: draftNoteTemplates,
+    });
+  }, [
+    draftAllowReopenCompleted,
+    draftAppearance,
+    draftAutosaveEnabled,
+    draftListDisplay,
+    draftNoteTemplates,
+    draftSavedFilters,
+    draftSavedSort,
+    draftTags,
+    isOpen,
+    onPreviewChange,
+    orderedFields,
+  ]);
 
   const updateDraftField = (fieldId: string, updates: Partial<CustomField>) => {
     setDraftFields((prev) =>
@@ -263,7 +299,6 @@ export function SettingsPanel({
 
   const hasChanges = useMemo(() => {
     return (
-      draftActivityCreationMode !== activityCreationMode ||
       draftAllowReopenCompleted !== allowReopenCompleted ||
       draftAutosaveEnabled !== autosaveEnabled ||
       shallowChanged(draftAppearance, appearance) ||
@@ -275,12 +310,10 @@ export function SettingsPanel({
       shallowChanged(draftNoteTemplates, noteTemplates)
     );
   }, [
-    activityCreationMode,
     allowReopenCompleted,
     appearance,
     autosaveEnabled,
     customFields,
-    draftActivityCreationMode,
     draftAllowReopenCompleted,
     draftAppearance,
     draftAutosaveEnabled,
@@ -301,14 +334,9 @@ export function SettingsPanel({
     setIsSaving(true);
 
     try {
-      if (
-        draftActivityCreationMode !== activityCreationMode ||
-        draftAllowReopenCompleted !== allowReopenCompleted ||
-        draftAutosaveEnabled !== autosaveEnabled
-      ) {
+      if (draftAllowReopenCompleted !== allowReopenCompleted || draftAutosaveEnabled !== autosaveEnabled) {
         await Promise.resolve(
           onUpdateGeneralSettings({
-            activityCreationMode: draftActivityCreationMode,
             allowReopenCompleted: draftAllowReopenCompleted,
             autosaveEnabled: draftAutosaveEnabled,
           })
@@ -442,30 +470,6 @@ export function SettingsPanel({
 
             <TabsContent value="general" className="mt-0 space-y-6">
               <div className="space-y-4">
-                <div className="space-y-3">
-                  <Label className="text-base font-medium">Modo de criacao de atividade</Label>
-                  <RadioGroup
-                    value={draftActivityCreationMode}
-                    onValueChange={(value) => setDraftActivityCreationMode(value as ActivityCreationMode)}
-                    className="space-y-2"
-                  >
-                    <div className="flex items-center space-x-3">
-                      <RadioGroupItem value="simple" id="simple" />
-                      <Label htmlFor="simple" className="cursor-pointer font-normal">
-                        <span className="font-medium">Simples</span>
-                        <span className="block text-sm text-muted-foreground">Campo de titulo e botao adicionar</span>
-                      </Label>
-                    </div>
-                    <div className="flex items-center space-x-3">
-                      <RadioGroupItem value="detailed" id="detailed" />
-                      <Label htmlFor="detailed" className="cursor-pointer font-normal">
-                        <span className="font-medium">Detalhado</span>
-                        <span className="block text-sm text-muted-foreground">Abre o formulario completo</span>
-                      </Label>
-                    </div>
-                  </RadioGroup>
-                </div>
-
                 <div className="flex items-center justify-between py-2">
                   <div>
                     <Label className="font-medium">Permitir reabrir concluidas</Label>

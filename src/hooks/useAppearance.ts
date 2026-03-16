@@ -17,7 +17,7 @@ interface UseAppearanceOptions {
   isAuthenticated?: boolean;
 }
 
-const defaultAppearance: AppearanceSettings = {
+export const defaultAppearance: AppearanceSettings = {
   fontFamily: 'inter',
   fontSize: 'medium',
   colorTheme: 'amber',
@@ -123,11 +123,28 @@ const colorThemes: Record<ColorTheme, { light: Record<string, string>; dark: Rec
   },
 };
 
+export function applyAppearanceToDocument(appearance: AppearanceSettings, resolvedTheme?: string) {
+  const root = document.documentElement;
+
+  root.style.setProperty('--font-family', fontFamilyMap[appearance.fontFamily]);
+  document.body.style.fontFamily = fontFamilyMap[appearance.fontFamily];
+  root.style.fontSize = fontSizeMap[appearance.fontSize];
+
+  const isDark = resolvedTheme === 'dark';
+  const themeColors = colorThemes[appearance.colorTheme][isDark ? 'dark' : 'light'];
+
+  Object.entries(themeColors).forEach(([property, value]) => {
+    root.style.setProperty(property, value);
+  });
+}
+
 export function useAppearance(options: UseAppearanceOptions = {}) {
   const { userId, isAuthenticated = false } = options;
   const { setTheme, resolvedTheme } = useTheme();
   const [appearance, setAppearance] = useState<AppearanceSettings>(defaultAppearance);
+  const [previewAppearance, setPreviewAppearanceState] = useState<AppearanceSettings | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const effectiveAppearance = previewAppearance ?? appearance;
 
   // Load appearance settings from database
   useEffect(() => {
@@ -168,23 +185,8 @@ export function useAppearance(options: UseAppearanceOptions = {}) {
 
   // Apply appearance settings to DOM
   useEffect(() => {
-    const root = document.documentElement;
-    
-    // Apply font family
-    root.style.setProperty('--font-family', fontFamilyMap[appearance.fontFamily]);
-    document.body.style.fontFamily = fontFamilyMap[appearance.fontFamily];
-    
-    // Apply font size
-    root.style.fontSize = fontSizeMap[appearance.fontSize];
-    
-    // Apply color theme based on current resolved theme (light/dark)
-    const isDark = resolvedTheme === 'dark';
-    const themeColors = colorThemes[appearance.colorTheme][isDark ? 'dark' : 'light'];
-    
-    Object.entries(themeColors).forEach(([property, value]) => {
-      root.style.setProperty(property, value);
-    });
-  }, [appearance, resolvedTheme]);
+    applyAppearanceToDocument(effectiveAppearance, resolvedTheme);
+  }, [effectiveAppearance, resolvedTheme]);
 
   // Update a single setting
   const updateAppearance = useCallback(async (updates: Partial<AppearanceSettings>) => {
@@ -216,9 +218,15 @@ export function useAppearance(options: UseAppearanceOptions = {}) {
     }
   }, [userId, appearance, setTheme]);
 
+  const setPreviewAppearance = useCallback((nextAppearance: AppearanceSettings | null) => {
+    setPreviewAppearanceState(nextAppearance);
+    setTheme((nextAppearance ?? appearance).themeMode);
+  }, [appearance, setTheme]);
+
   return {
     appearance,
     isLoading,
     updateAppearance,
+    setPreviewAppearance,
   };
 }

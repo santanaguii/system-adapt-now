@@ -4,9 +4,10 @@ import { NotesSidebar } from '@/components/notes/NotesSidebar';
 import { ActivityList } from '@/components/activities/ActivityList';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
+import { Brand } from '@/components/brand/Brand';
 import { LogOut, User, Menu } from 'lucide-react';
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@/components/ui/resizable';
-import { Activity, CustomField, Tag, SortOption, DailyNote, NoteSearchResult, LineType, ActivityListDisplaySettings, FilterConfig, ActivityCreationMode, NoteLine, NoteTemplate } from '@/types';
+import { Activity, CustomField, Tag, SortOption, DailyNote, NoteSearchResult, LineType, ActivityListDisplaySettings, FilterConfig, NoteLine, NoteTemplate } from '@/types';
 import { SaveStatus } from '@/hooks/useNotes';
 import { useState } from 'react';
 
@@ -57,7 +58,6 @@ interface TabletLayoutProps {
   sortOption: SortOption;
   onSortChange: (sort: SortOption) => void;
   allowReopenCompleted: boolean;
-  activityCreationMode: ActivityCreationMode;
 }
 
 export function TabletLayout({
@@ -102,15 +102,13 @@ export function TabletLayout({
   sortOption,
   onSortChange,
   allowReopenCompleted,
-  activityCreationMode,
 }: TabletLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-background">
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-2 border-b bg-muted/30">
-        <div className="flex items-center gap-2">
+      <div className="flex items-center justify-between border-b bg-muted/30 px-4 py-2">
+        <div className="flex min-w-0 items-center gap-3">
           <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
             <SheetTrigger asChild>
               <Button variant="ghost" size="icon" className="h-8 w-8">
@@ -133,15 +131,21 @@ export function TabletLayout({
               />
             </SheetContent>
           </Sheet>
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Brand compact />
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="hidden items-center gap-2 text-sm text-muted-foreground sm:flex">
             <User className="h-4 w-4" />
             <span>{username}</span>
           </div>
+          <Button variant="ghost" size="sm" onClick={onSignOut} className="hidden h-8 sm:inline-flex">
+            <LogOut className="h-4 w-4 mr-2" />
+            Sair
+          </Button>
+          <Button variant="ghost" size="icon" onClick={onSignOut} className="h-8 w-8 sm:hidden">
+            <LogOut className="h-4 w-4" />
+          </Button>
         </div>
-        <Button variant="ghost" size="sm" onClick={onSignOut} className="h-8">
-          <LogOut className="h-4 w-4 mr-2" />
-          Sair
-        </Button>
       </div>
 
       {/* Main content - Two panels */}
@@ -198,7 +202,6 @@ export function TabletLayout({
               sortOption={sortOption}
               onSortChange={onSortChange}
               allowReopenCompleted={allowReopenCompleted}
-              activityCreationMode={activityCreationMode}
             />
           </ResizablePanel>
         </ResizablePanelGroup>

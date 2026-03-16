@@ -186,6 +186,8 @@ export function NoteEditor({
 
   const visibleLines = getVisibleLines();
   const focusedLine = focusedLineId ? note.lines.find((line) => line.id === focusedLineId) || null : null;
+  const canCreateActivityFromFocusedLine = Boolean(focusedLine && focusedLine.content.trim());
+  const focusedLineAlreadyConverted = Boolean(focusedLine && activityCreatedLineIds.includes(focusedLine.id));
 
   const focusLineAt = useCallback((lineId: string, start: number, end = start) => {
     setFocusedLineId(lineId);
@@ -563,7 +565,24 @@ export function NoteEditor({
         </div>
 
         <div className="flex items-center gap-1">
-            <Button
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant="ghost" size="sm" className="h-8 px-3">
+                <FileStack className="mr-2 h-4 w-4" />
+                Templates
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent align="end" className="w-60 p-2">
+              <div className="space-y-1">
+                {noteTemplates.map((template) => (
+                  <Button key={template.id} variant="ghost" className="w-full justify-start" onClick={() => handleInsertTemplate(template.id)}>
+                    {template.name}
+                  </Button>
+                ))}
+              </div>
+            </PopoverContent>
+          </Popover>
+          <Button
               variant={hideComments ? 'default' : 'ghost'}
               size="icon"
             className="h-8 w-8"
@@ -590,72 +609,52 @@ export function NoteEditor({
 
       <div className="shrink-0 border-b px-4 py-2">
         <div className="flex flex-wrap items-center gap-2">
-        <Button variant={focusedLine?.type === 'paragraph' ? 'default' : 'outline'} size="sm" onClick={() => handleApplyType('paragraph')} disabled={!focusedLine}>
-          <Type className="mr-2 h-4 w-4" />
-          Texto
-        </Button>
-        <Button variant={focusedLine?.type === 'title' ? 'default' : 'outline'} size="sm" onClick={() => handleApplyType('title')} disabled={!focusedLine}>
-          <Heading1 className="mr-2 h-4 w-4" />
-          Titulo
-        </Button>
-        <Button variant={focusedLine?.type === 'subtitle' ? 'default' : 'outline'} size="sm" onClick={() => handleApplyType('subtitle')} disabled={!focusedLine}>
-          <Heading2 className="mr-2 h-4 w-4" />
-          Subtitulo
-        </Button>
-        <Button variant={focusedLine?.type === 'bullet' ? 'default' : 'outline'} size="sm" onClick={() => handleApplyType('bullet')} disabled={!focusedLine}>
-          <List className="mr-2 h-4 w-4" />
-          Topico
-        </Button>
-        <Button variant={focusedLine?.type === 'quote' ? 'default' : 'outline'} size="sm" onClick={() => handleApplyType('quote')} disabled={!focusedLine}>
-          <Quote className="mr-2 h-4 w-4" />
-          Citacao
-        </Button>
-        <Button variant={focusedLine?.type === 'comment' ? 'default' : 'outline'} size="sm" onClick={() => handleApplyType('comment')} disabled={!focusedLine}>
-          <MessageSquare className="mr-2 h-4 w-4" />
-          Comentario
-        </Button>
-        <Popover>
-          <PopoverTrigger asChild>
-            <Button variant="outline" size="sm">
-              <FileStack className="mr-2 h-4 w-4" />
-              Templates
+          <div className="flex flex-wrap items-center gap-0">
+            <Button variant={focusedLine?.type === 'paragraph' ? 'default' : 'outline'} size="sm" className="rounded-r-none" onClick={() => handleApplyType('paragraph')} disabled={!focusedLine}>
+              <Type className="mr-2 h-4 w-4" />
+              Texto
             </Button>
-          </PopoverTrigger>
-          <PopoverContent align="start" className="w-60 p-2">
-            <div className="space-y-1">
-              {noteTemplates.map((template) => (
-                <Button key={template.id} variant="ghost" className="w-full justify-start" onClick={() => handleInsertTemplate(template.id)}>
-                  {template.name}
-                </Button>
-              ))}
-            </div>
-          </PopoverContent>
-        </Popover>
-        {focusedLine && focusedLine.content.trim() && (
-          activityCreatedLineIds.includes(focusedLine.id) ? (
-            <div className="inline-flex h-9 items-center rounded-md border border-emerald-200 bg-emerald-50 px-3 text-sm text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-950/30 dark:text-emerald-300">
+            <Button variant={focusedLine?.type === 'title' ? 'default' : 'outline'} size="sm" className="rounded-none border-l-0" onClick={() => handleApplyType('title')} disabled={!focusedLine}>
+              <Heading1 className="mr-2 h-4 w-4" />
+              Titulo
+            </Button>
+            <Button variant={focusedLine?.type === 'subtitle' ? 'default' : 'outline'} size="sm" className="rounded-none border-l-0" onClick={() => handleApplyType('subtitle')} disabled={!focusedLine}>
+              <Heading2 className="mr-2 h-4 w-4" />
+              Subtitulo
+            </Button>
+            <Button variant={focusedLine?.type === 'bullet' ? 'default' : 'outline'} size="sm" className="rounded-none border-l-0" onClick={() => handleApplyType('bullet')} disabled={!focusedLine}>
+              <List className="mr-2 h-4 w-4" />
+              Topico
+            </Button>
+            <Button variant={focusedLine?.type === 'quote' ? 'default' : 'outline'} size="sm" className="rounded-none border-l-0" onClick={() => handleApplyType('quote')} disabled={!focusedLine}>
+              <Quote className="mr-2 h-4 w-4" />
+              Citacao
+            </Button>
+            <Button variant={focusedLine?.type === 'comment' ? 'default' : 'outline'} size="sm" className="rounded-l-none border-l-0" onClick={() => handleApplyType('comment')} disabled={!focusedLine}>
+              <MessageSquare className="mr-2 h-4 w-4" />
+              Comentario
+            </Button>
+          </div>
+          {(onOpenDetailedActivityFromLine || onCreateActivityFromLine) && (
+            <Button
+              variant={focusedLineAlreadyConverted ? 'default' : 'outline'}
+              size="sm"
+              disabled={!canCreateActivityFromFocusedLine || focusedLineAlreadyConverted}
+              onClick={() => {
+                if (!focusedLine || focusedLineAlreadyConverted) {
+                  return;
+                }
+                if (onOpenDetailedActivityFromLine) {
+                  onOpenDetailedActivityFromLine(focusedLine);
+                  return;
+                }
+                onCreateActivityFromLine?.(focusedLine);
+              }}
+            >
               <Link2 className="mr-2 h-4 w-4" />
-              Atividade criada
-            </div>
-          ) : (
-            (onOpenDetailedActivityFromLine || onCreateActivityFromLine) && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  if (onOpenDetailedActivityFromLine) {
-                    onOpenDetailedActivityFromLine(focusedLine);
-                    return;
-                  }
-                  onCreateActivityFromLine?.(focusedLine);
-                }}
-              >
-                <Link2 className="mr-2 h-4 w-4" />
-                Virar atividade
-              </Button>
-            )
-          )
-        )}
+              {focusedLineAlreadyConverted ? 'Atividade criada' : 'Virar atividade'}
+            </Button>
+          )}
         </div>
       </div>
 
@@ -675,14 +674,6 @@ export function NoteEditor({
               onMouseDown={(event) => handleLineMouseDown(line.id, event)}
               onFocus={() => setFocusedLineId(line.id)}
               onToggleCollapse={() => onToggleCollapse(line.id)}
-              onCreateActivity={
-                onOpenDetailedActivityFromLine
-                  ? () => onOpenDetailedActivityFromLine(line)
-                  : onCreateActivityFromLine
-                    ? () => onCreateActivityFromLine(line)
-                    : undefined
-              }
-              activityCreated={activityCreatedLineIds.includes(line.id)}
               selectionRequest={selectionRequest?.lineId === line.id ? { start: selectionRequest.start, end: selectionRequest.end, key: selectionRequest.key } : null}
               hasChildren={(line.type === 'title' || line.type === 'subtitle') && note.lines.some((candidate, index) => {
                 const currentIndex = note.lines.findIndex((noteLine) => noteLine.id === line.id);

@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" fill="none">
+  <defs>
+    <linearGradient id="bg" x1="132" y1="76" x2="1058" y2="562" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FBF5EA"/>
+      <stop offset="1" stop-color="#F0E0C3"/>
+    </linearGradient>
+    <linearGradient id="card" x1="278" y1="164" x2="508" y2="394" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#F4B544"/>
+      <stop offset="1" stop-color="#C7681B"/>
+    </linearGradient>
+    <linearGradient id="panel" x1="338" y1="224" x2="448" y2="334" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFF8EE"/>
+      <stop offset="1" stop-color="#F4E3C5"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="630" rx="36" fill="url(#bg)"/>
+  <circle cx="1022" cy="142" r="88" fill="#F4B544" fill-opacity="0.12"/>
+  <circle cx="144" cy="548" r="124" fill="#C7681B" fill-opacity="0.08"/>
+  <rect x="240" y="150" width="290" height="290" rx="88" fill="url(#card)"/>
+  <rect x="252" y="162" width="266" height="266" rx="76" stroke="white" stroke-opacity="0.3" stroke-width="4"/>
+  <rect x="300" y="210" width="170" height="170" rx="52" fill="url(#panel)"/>
+  <path d="M338 262h60" stroke="#8B4A14" stroke-width="18" stroke-linecap="round"/>
+  <path d="M338 310h50" stroke="#8B4A14" stroke-width="18" stroke-linecap="round" opacity="0.9"/>
+  <path d="M338 358h38" stroke="#8B4A14" stroke-width="18" stroke-linecap="round" opacity="0.7"/>
+  <path d="M405 318l22 22 38-46" stroke="#C7681B" stroke-width="22" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="600" y="260" fill="#2D241B" font-family="Inter, Arial, sans-serif" font-size="68" font-weight="700" letter-spacing="-2">Pauta</text>
+  <text x="600" y="320" fill="#8B6B4A" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="600" letter-spacing="5">ORGANIZACAO PESSOAL</text>
+  <text x="600" y="396" fill="#5A4A39" font-family="Inter, Arial, sans-serif" font-size="34" font-weight="500">Notas, rotina e atividades no mesmo lugar.</text>
+</svg>

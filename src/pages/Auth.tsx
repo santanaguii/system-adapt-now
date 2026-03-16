@@ -7,6 +7,8 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Brand } from '@/components/brand/Brand';
+import { BRAND_DESCRIPTION } from '@/lib/brand';
 import { Loader2, User, Lock, HelpCircle, ArrowLeft, CheckCircle } from 'lucide-react';
 
 type AuthMode = 'login' | 'register' | 'forgot';
@@ -143,9 +145,12 @@ export function Auth() {
 
   if (mode === 'forgot') {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background p-4">
-        <Card className="w-full max-w-md">
-          <CardHeader className="text-center">
+      <div className="min-h-screen flex items-center justify-center bg-[radial-gradient(circle_at_top,_rgba(244,181,68,0.18),_transparent_42%),linear-gradient(180deg,_hsl(var(--background)),_hsl(var(--muted)))] p-4">
+        <Card className="w-full max-w-md border-border/70 shadow-xl shadow-black/5">
+          <CardHeader className="space-y-4 text-center">
+            <div className="mx-auto rounded-2xl border border-border/60 bg-card/90 px-4 py-3">
+              <Brand showTagline />
+            </div>
             <CardTitle className="text-2xl">Recuperar Senha</CardTitle>
             <CardDescription>
               {forgotStep === 'username' && 'Digite seu nome de usuário'}
@@ -325,10 +330,14 @@ export function Auth() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background p-4">
-      <Card className="w-full max-w-md">
-        <CardHeader className="text-center">
+    <div className="min-h-screen flex items-center justify-center bg-[radial-gradient(circle_at_top,_rgba(244,181,68,0.18),_transparent_42%),linear-gradient(180deg,_hsl(var(--background)),_hsl(var(--muted)))] p-4">
+      <Card className="w-full max-w-md border-border/70 shadow-xl shadow-black/5">
+        <CardHeader className="space-y-4 text-center">
+          <div className="mx-auto rounded-2xl border border-border/60 bg-card/90 px-4 py-3">
+            <Brand showTagline />
+          </div>
           <CardTitle className="text-2xl">Bem-vindo</CardTitle>
+          <p className="text-sm text-muted-foreground">{BRAND_DESCRIPTION}</p>
           <CardDescription>
             Faça login ou crie uma conta para continuar
           </CardDescription>

@@ -46,7 +46,7 @@ const defaultSettings: AppSettings = {
   noteTemplates: defaultNoteTemplates,
   allowReopenCompleted: true,
   defaultSort: 'manual',
-  activityCreationMode: 'simple',
+  activityCreationMode: 'detailed',
   autosaveEnabled: true,
   listDisplay: defaultListDisplay,
   savedFilters: [],
@@ -69,7 +69,7 @@ export function useSettings() {
   }>({
     allowReopenCompleted: true,
     defaultSort: 'manual',
-    activityCreationMode: 'simple',
+    activityCreationMode: 'detailed',
     autosaveEnabled: true,
     listDisplay: defaultListDisplay,
     savedFilters: [],
@@ -86,7 +86,7 @@ export function useSettings() {
       setGeneralSettings({
         allowReopenCompleted: true,
         defaultSort: 'manual',
-        activityCreationMode: 'simple',
+        activityCreationMode: 'detailed',
         autosaveEnabled: true,
         listDisplay: defaultListDisplay,
         savedFilters: [],
@@ -148,7 +148,7 @@ export function useSettings() {
           setGeneralSettings({
             allowReopenCompleted: settingsData.allow_reopen_completed,
             defaultSort: settingsData.default_sort as SortOption,
-            activityCreationMode: settingsData.activity_creation_mode as ActivityCreationMode,
+            activityCreationMode: 'detailed',
             autosaveEnabled: settingsData.autosave_enabled ?? true,
             listDisplay: normalizeListDisplaySettings(settingsData.list_display as Partial<ActivityListDisplaySettings> | null),
             savedFilters: settingsData.saved_filters ?? [],

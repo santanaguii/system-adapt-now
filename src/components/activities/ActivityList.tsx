@@ -1,11 +1,11 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Activity, Tag, CustomField, SortOption, ActivityCreationMode, ActivityListDisplaySettings, FilterConfig } from '@/types';
+import { Activity, Tag, CustomField, SortOption, ActivityListDisplaySettings, FilterConfig } from '@/types';
 import { ActivityItem } from './ActivityItem';
 import { ActivitySchedule } from './ActivitySchedule';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Plus, Filter, Settings, ChevronDown, ChevronUp, Search, ArrowUpDown, Tag as TagIcon, CalendarClock, Inbox, CalendarRange, ListTodo } from 'lucide-react';
+import { Plus, Filter, Settings, ChevronDown, ChevronUp, Search, ArrowUpDown, CalendarRange, ListTodo } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
   DropdownMenu,
@@ -85,7 +85,6 @@ interface ActivityListProps {
   sortOption: SortOption;
   onSortChange: (sort: SortOption) => void;
   allowReopenCompleted: boolean;
-  activityCreationMode: ActivityCreationMode;
 }
 
 interface SelectedActivityState {
@@ -165,7 +164,6 @@ export function ActivityList({
   sortOption,
   onSortChange,
   allowReopenCompleted,
-  activityCreationMode,
 }: ActivityListProps) {
   const [panelMode, setPanelMode] = useState<'list' | 'schedule'>('list');
   const [newActivityTitle, setNewActivityTitle] = useState('');
@@ -180,7 +178,6 @@ export function ActivityList({
   const [newActivityFields, setNewActivityFields] = useState<Record<string, unknown>>({});
   const [viewMode, setViewMode] = useState<ActivityViewMode>('all');
   const [selectedProject, setSelectedProject] = useState<string>('all');
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const [completingActivities, setCompletingActivities] = useState<Record<string, Activity>>({});
   const completionTimeoutsRef = useRef<Map<string, number>>(new Map());
   const completingActivitiesRef = useRef<Record<string, Activity>>({});
@@ -221,15 +218,6 @@ export function ActivityList({
       return { dueDate: null, ...createMetaPatch({ [ACTIVITY_META.bucket]: 'someday' }) };
     }
     return createMetaPatch({ [ACTIVITY_META.bucket]: 'inbox' });
-  };
-
-  const handleAddActivitySimple = async () => {
-    if (!newActivityTitle.trim()) return;
-    setIsSubmitting(true);
-    await onAdd(newActivityTitle.trim(), newActivityTags.length > 0 ? newActivityTags : undefined, getCreationDefaults());
-    setNewActivityTitle('');
-    setNewActivityTags([]);
-    setIsSubmitting(false);
   };
 
   const handleDragEnd = (event: DragEndEvent) => {
@@ -389,12 +377,12 @@ export function ActivityList({
     return bucket === 'someday' || bucket === 'inbox' || (!relevantDate && !blockedBy);
   }).length;
 
-  const viewOptions: Array<{ id: ActivityViewMode; label: string; count: number; icon: typeof Inbox }> = [
-    { id: 'all', label: 'Todas', count: activities.active.length, icon: Inbox },
-    { id: 'today', label: 'Hoje', count: activities.active.filter((activity) => shouldShowInToday(activity, todayKey)).length, icon: CalendarClock },
-    { id: 'week', label: 'Semana', count: activities.active.filter((activity) => { const relevantDate = getRelevantDate(activity); return Boolean(relevantDate) && relevantDate >= todayKey && relevantDate <= nextWeekKey; }).length, icon: CalendarClock },
-    { id: 'month', label: 'Mes', count: activities.active.filter((activity) => { const relevantDate = getRelevantDate(activity); return Boolean(relevantDate) && relevantDate >= todayKey && relevantDate <= monthEndKey; }).length, icon: CalendarClock },
-    { id: 'backlog', label: 'S/data', count: backlogCount, icon: Inbox },
+  const viewOptions: Array<{ id: ActivityViewMode; label: string; count: number }> = [
+    { id: 'all', label: 'Todas', count: activities.active.length },
+    { id: 'today', label: 'Hoje', count: activities.active.filter((activity) => shouldShowInToday(activity, todayKey)).length },
+    { id: 'week', label: 'Semana', count: activities.active.filter((activity) => { const relevantDate = getRelevantDate(activity); return Boolean(relevantDate) && relevantDate >= todayKey && relevantDate <= nextWeekKey; }).length },
+    { id: 'month', label: 'Mes', count: activities.active.filter((activity) => { const relevantDate = getRelevantDate(activity); return Boolean(relevantDate) && relevantDate >= todayKey && relevantDate <= monthEndKey; }).length },
+    { id: 'backlog', label: 'S/data', count: backlogCount },
   ];
 
   const sortLabels: Record<SortOption, string> = {
@@ -660,10 +648,8 @@ export function ActivityList({
           <>
             <div className="mt-3 flex flex-wrap gap-2">
               {viewOptions.map((option) => {
-                const Icon = option.icon;
                 return (
                   <Button key={option.id} variant={viewMode === option.id ? 'default' : 'outline'} size="sm" onClick={() => setViewMode(option.id)}>
-                    <Icon className="mr-2 h-4 w-4" />
                     {option.label}
                     <Badge variant="secondary" className="ml-2">{option.count}</Badge>
                   </Button>
@@ -718,68 +704,14 @@ export function ActivityList({
         </div>
       )}
 
-      {panelMode === 'list' && (activityCreationMode === 'simple' ? (
-        <div className="shrink-0 flex flex-col gap-2 border-b px-4 py-3">
-          <div className="flex items-center gap-2">
-            <Input
-              placeholder="Nova atividade..."
-              value={newActivityTitle}
-              onChange={(e) => setNewActivityTitle(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  void handleAddActivitySimple();
-                }
-              }}
-              className="flex-1"
-            />
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button variant="outline" size="icon" className="shrink-0">
-                  <TagIcon className="h-4 w-4" />
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-64 p-3" align="end">
-                <div className="space-y-2">
-                  <p className="text-sm font-medium">Selecionar tags</p>
-                  <div className="flex flex-wrap gap-1">
-                    {tags.length > 0 ? tags.map((tag) => (
-                      <Badge
-                        key={tag.id}
-                        variant={newActivityTags.includes(tag.id) ? 'default' : 'outline'}
-                        className="cursor-pointer transition-colors"
-                        onClick={() => setNewActivityTags((prev) => (prev.includes(tag.id) ? prev.filter((id) => id !== tag.id) : [...prev, tag.id]))}
-                        style={{
-                          backgroundColor: newActivityTags.includes(tag.id) ? tag.color : 'transparent',
-                          borderColor: tag.color,
-                          color: newActivityTags.includes(tag.id) ? 'white' : tag.color,
-                        }}
-                      >
-                        {tag.name}
-                      </Badge>
-                    )) : (
-                      <span className="text-sm text-muted-foreground">Nenhuma tag disponivel</span>
-                    )}
-                  </div>
-                </div>
-              </PopoverContent>
-            </Popover>
-            <Button size="icon" onClick={() => void handleAddActivitySimple()} disabled={!newActivityTitle.trim() || isSubmitting}>
-              <Plus className="h-4 w-4" />
-            </Button>
-          </div>
-          <div className="flex flex-wrap gap-1 text-xs text-muted-foreground">
-            <span className="rounded-full border px-2 py-1">Nova tarefa entra em: {viewOptions.find((option) => option.id === viewMode)?.label}</span>
-            {selectedProject !== 'all' && <span className="rounded-full border px-2 py-1">Projeto: {selectedProject}</span>}
-          </div>
-        </div>
-      ) : (
+      {panelMode === 'list' && (
         <div className="shrink-0 flex items-center justify-center border-b px-4 py-3">
           <Button onClick={() => setShowNewActivityDialog(true)} className="w-full">
             <Plus className="mr-2 h-4 w-4" />
             Nova Atividade
           </Button>
         </div>
-      ))}
+      )}
 
       {panelMode === 'schedule' ? (
         <ActivitySchedule

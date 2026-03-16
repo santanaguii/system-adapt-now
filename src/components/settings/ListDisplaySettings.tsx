@@ -1,13 +1,12 @@
+import { useState } from 'react';
 import { CustomField, ActivityListDisplaySettings, Tag, FilterConfig, SortConfig } from '@/types';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { Checkbox } from '@/components/ui/checkbox';
 import { Separator } from '@/components/ui/separator';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Plus, Trash2 } from 'lucide-react';
-import { useState } from 'react';
 
 interface ListDisplaySettingsProps {
   customFields: CustomField[];
@@ -22,14 +21,14 @@ interface ListDisplaySettingsProps {
 
 const operatorLabels: Record<FilterConfig['operator'], string> = {
   equals: 'Igual a',
-  contains: 'Contém',
+  contains: 'Contem',
   gt: 'Maior que',
   lt: 'Menor que',
   gte: 'Maior ou igual a',
   lte: 'Menor ou igual a',
   between: 'Entre',
-  isEmpty: 'Está vazio',
-  isNotEmpty: 'Não está vazio',
+  isEmpty: 'Esta vazio',
+  isNotEmpty: 'Nao esta vazio',
 };
 
 function getOperatorsForFieldType(type: string): FilterConfig['operator'][] {
@@ -65,19 +64,22 @@ export function ListDisplaySettingsTab({
 }: ListDisplaySettingsProps) {
   const [newFilter, setNewFilter] = useState<Partial<FilterConfig>>({});
 
-  const enabledFields = customFields.filter(f => f.enabled);
+  const enabledFields = customFields.filter((field) => field.enabled);
 
   const handleToggleFieldVisibility = (fieldId: string, visible: boolean) => {
     const currentVisible = listDisplay.visibleFieldIds || [];
-    const newVisible = visible
+    const visibleFieldIds = visible
       ? [...currentVisible, fieldId]
-      : currentVisible.filter(id => id !== fieldId);
-    onUpdateListDisplay({ visibleFieldIds: newVisible });
+      : currentVisible.filter((id) => id !== fieldId);
+
+    onUpdateListDisplay({ visibleFieldIds });
   };
 
   const handleAddFilter = () => {
-    if (!newFilter.type) return;
-    
+    if (!newFilter.type) {
+      return;
+    }
+
     const filter: FilterConfig = {
       type: newFilter.type,
       fieldId: newFilter.fieldId,
@@ -85,80 +87,78 @@ export function ListDisplaySettingsTab({
       operator: newFilter.operator || 'equals',
       value: newFilter.value,
     };
-    
+
     onUpdateFilters([...savedFilters, filter]);
     setNewFilter({});
   };
 
   const handleRemoveFilter = (index: number) => {
-    const newFilters = savedFilters.filter((_, i) => i !== index);
-    onUpdateFilters(newFilters);
+    onUpdateFilters(savedFilters.filter((_, currentIndex) => currentIndex !== index));
   };
 
-  const selectedField = enabledFields.find(f => f.id === newFilter.fieldId);
-  const availableOperators = selectedField 
+  const selectedField = enabledFields.find((field) => field.id === newFilter.fieldId);
+  const availableOperators = selectedField
     ? getOperatorsForFieldType(selectedField.type)
     : ['equals', 'contains', 'isEmpty', 'isNotEmpty'] as FilterConfig['operator'][];
 
+  const visibilityItems = [
+    {
+      id: 'show-tags',
+      label: 'Mostrar tags',
+      description: 'Exibir tags coloridas na lista',
+      checked: listDisplay.showTags,
+      onCheckedChange: (checked: boolean) => onUpdateListDisplay({ showTags: checked }),
+    },
+    {
+      id: 'show-due-date',
+      label: 'Mostrar data de prazo',
+      description: 'Exibir prazo quando definido',
+      checked: listDisplay.showDueDate,
+      onCheckedChange: (checked: boolean) => onUpdateListDisplay({ showDueDate: checked }),
+    },
+    {
+      id: 'show-priority',
+      label: 'Mostrar prioridade',
+      description: 'Exibir indicador de prioridade',
+      checked: listDisplay.showPriority,
+      onCheckedChange: (checked: boolean) => onUpdateListDisplay({ showPriority: checked }),
+    },
+  ];
+
   return (
     <div className="space-y-6">
-      {/* Display Settings Section */}
       <div className="space-y-4">
-        <h3 className="text-base font-medium">Exibição na Lista</h3>
+        <h3 className="text-base font-medium">Exibicao na Lista</h3>
         <p className="text-sm text-muted-foreground">
-          Escolha quais informações aparecem nas atividades na visualização em lista.
+          Escolha quais informacoes aparecem nas atividades na visualizacao em lista.
         </p>
-        
+
         <div className="space-y-3">
-          <div className="flex items-center justify-between py-2">
-            <div>
-              <Label className="font-medium">Mostrar Tags</Label>
-              <p className="text-sm text-muted-foreground">Exibir tags coloridas</p>
+          {visibilityItems.map((item) => (
+            <div key={item.id} className="flex items-center justify-between py-2">
+              <div>
+                <Label className="font-medium">{item.label}</Label>
+                <p className="text-sm text-muted-foreground">{item.description}</p>
+              </div>
+              <Switch checked={item.checked} onCheckedChange={item.onCheckedChange} />
             </div>
-            <Switch
-              checked={listDisplay.showTags}
-              onCheckedChange={(checked) => onUpdateListDisplay({ showTags: checked })}
-            />
-          </div>
-
-          <div className="flex items-center justify-between py-2">
-            <div>
-              <Label className="font-medium">Mostrar Data de Prazo</Label>
-              <p className="text-sm text-muted-foreground">Exibir prazo quando definido</p>
-            </div>
-            <Switch
-              checked={listDisplay.showDueDate}
-              onCheckedChange={(checked) => onUpdateListDisplay({ showDueDate: checked })}
-            />
-          </div>
-
-          <div className="flex items-center justify-between py-2">
-            <div>
-              <Label className="font-medium">Mostrar Prioridade</Label>
-              <p className="text-sm text-muted-foreground">Exibir indicador de prioridade</p>
-            </div>
-            <Switch
-              checked={listDisplay.showPriority}
-              onCheckedChange={(checked) => onUpdateListDisplay({ showPriority: checked })}
-            />
-          </div>
+          ))}
         </div>
 
-        {/* Custom Fields Visibility */}
         {enabledFields.length > 0 && (
           <div className="space-y-3 pt-2">
-            <Label className="text-sm font-medium">Campos Personalizados Visíveis</Label>
+            <Label className="text-sm font-medium">Campos personalizados visiveis</Label>
             <div className="space-y-2">
-              {enabledFields.map(field => (
-                <div key={field.id} className="flex items-center gap-3">
-                  <Checkbox
-                    id={`field-${field.id}`}
+              {enabledFields.map((field) => (
+                <div key={field.id} className="flex items-center justify-between py-2">
+                  <div>
+                    <Label className="font-medium">{field.name}</Label>
+                    <p className="text-sm text-muted-foreground">Exibir este campo na lista de atividades</p>
+                  </div>
+                  <Switch
                     checked={(listDisplay.visibleFieldIds || []).includes(field.id)}
-                    onCheckedChange={(checked) => handleToggleFieldVisibility(field.id, checked as boolean)}
+                    onCheckedChange={(checked) => handleToggleFieldVisibility(field.id, checked)}
                   />
-                  <Label htmlFor={`field-${field.id}`} className="font-normal cursor-pointer">
-                    {field.name}
-                  </Label>
                 </div>
               ))}
             </div>
@@ -168,41 +168,42 @@ export function ListDisplaySettingsTab({
 
       <Separator />
 
-      {/* Sort Settings Section */}
       <div className="space-y-4">
-        <h3 className="text-base font-medium">Ordenação Padrão</h3>
+        <h3 className="text-base font-medium">Ordenacao Padrao</h3>
         <p className="text-sm text-muted-foreground">
-          Configure a ordenação padrão das atividades.
+          Configure a ordenacao padrao das atividades.
         </p>
 
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-2">
             <Label>Ordenar por</Label>
-            <Select 
-              value={savedSort.type} 
-              onValueChange={(v) => onUpdateSort({ ...savedSort, type: v as SortConfig['type'] })}
+            <Select
+              value={savedSort.type}
+              onValueChange={(value) => onUpdateSort({ ...savedSort, type: value as SortConfig['type'] })}
             >
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="manual">Manual</SelectItem>
-                <SelectItem value="createdAt">Data de Criação</SelectItem>
-                {enabledFields.filter(f => ['date', 'datetime', 'number', 'currency', 'single_select'].includes(f.type)).map(field => (
-                  <SelectItem key={field.id} value={`field:${field.id}`}>
-                    {field.name}
-                  </SelectItem>
-                ))}
-                {tags.length > 0 && <SelectItem value="tag">Por Tag</SelectItem>}
+                <SelectItem value="createdAt">Data de criacao</SelectItem>
+                {enabledFields
+                  .filter((field) => ['date', 'datetime', 'number', 'currency', 'single_select'].includes(field.type))
+                  .map((field) => (
+                    <SelectItem key={field.id} value={`field:${field.id}`}>
+                      {field.name}
+                    </SelectItem>
+                  ))}
+                {tags.length > 0 && <SelectItem value="tag">Por tag</SelectItem>}
               </SelectContent>
             </Select>
           </div>
 
           <div className="space-y-2">
-            <Label>Direção</Label>
-            <Select 
-              value={savedSort.direction} 
-              onValueChange={(v) => onUpdateSort({ ...savedSort, direction: v as 'asc' | 'desc' })}
+            <Label>Direcao</Label>
+            <Select
+              value={savedSort.direction}
+              onValueChange={(value) => onUpdateSort({ ...savedSort, direction: value as 'asc' | 'desc' })}
             >
               <SelectTrigger>
                 <SelectValue />
@@ -218,28 +219,23 @@ export function ListDisplaySettingsTab({
 
       <Separator />
 
-      {/* Filter Settings Section */}
       <div className="space-y-4">
         <h3 className="text-base font-medium">Filtros Salvos</h3>
         <p className="text-sm text-muted-foreground">
-          Configure filtros que serão aplicados automaticamente.
+          Configure filtros que serao aplicados automaticamente.
         </p>
 
-        {/* Existing Filters */}
         {savedFilters.length > 0 && (
           <div className="space-y-2">
             {savedFilters.map((filter, index) => {
-              const field = enabledFields.find(f => f.id === filter.fieldId);
-              const tag = tags.find(t => t.id === filter.tagId);
-              
+              const field = enabledFields.find((item) => item.id === filter.fieldId);
+              const tag = tags.find((item) => item.id === filter.tagId);
+
               return (
-                <div key={index} className="flex items-center gap-2 p-2 rounded bg-muted/50">
+                <div key={index} className="flex items-center gap-2 rounded bg-muted/50 p-2">
                   <span className="flex-1 text-sm">
-                    {filter.type === 'tag' ? `Tag: ${tag?.name || 'Desconhecida'}` : `Campo: ${field?.name || 'Desconhecido'}`}
-                    {' '}
-                    <span className="text-muted-foreground">
-                      {operatorLabels[filter.operator]}
-                    </span>
+                    {filter.type === 'tag' ? `Tag: ${tag?.name || 'Desconhecida'}` : `Campo: ${field?.name || 'Desconhecido'}`}{' '}
+                    <span className="text-muted-foreground">{operatorLabels[filter.operator]}</span>
                     {filter.value !== undefined && ` "${filter.value}"`}
                   </span>
                   <Button
@@ -256,39 +252,35 @@ export function ListDisplaySettingsTab({
           </div>
         )}
 
-        {/* Add New Filter */}
-        <div className="space-y-3 p-3 rounded-lg border">
-          <Label className="text-sm font-medium">Novo Filtro</Label>
-          
+        <div className="space-y-3 rounded-lg border p-3">
+          <Label className="text-sm font-medium">Novo filtro</Label>
+
           <div className="grid grid-cols-2 gap-2">
             <Select
               value={newFilter.type || ''}
-              onValueChange={(v) => setNewFilter({ type: v as 'tag' | 'field', operator: 'equals' })}
+              onValueChange={(value) => setNewFilter({ type: value as 'tag' | 'field', operator: 'equals' })}
             >
               <SelectTrigger>
                 <SelectValue placeholder="Tipo" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="tag">Por Tag</SelectItem>
-                <SelectItem value="field">Por Campo</SelectItem>
+                <SelectItem value="tag">Por tag</SelectItem>
+                <SelectItem value="field">Por campo</SelectItem>
               </SelectContent>
             </Select>
 
             {newFilter.type === 'tag' && (
               <Select
                 value={newFilter.tagId || ''}
-                onValueChange={(v) => setNewFilter({ ...newFilter, tagId: v })}
+                onValueChange={(value) => setNewFilter({ ...newFilter, tagId: value })}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Selecionar Tag" />
+                  <SelectValue placeholder="Selecionar tag" />
                 </SelectTrigger>
                 <SelectContent>
-                  {tags.map(tag => (
+                  {tags.map((tag) => (
                     <SelectItem key={tag.id} value={tag.id}>
-                      <span className="flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full" style={{ backgroundColor: tag.color }} />
-                        {tag.name}
-                      </span>
+                      {tag.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -298,13 +290,13 @@ export function ListDisplaySettingsTab({
             {newFilter.type === 'field' && (
               <Select
                 value={newFilter.fieldId || ''}
-                onValueChange={(v) => setNewFilter({ ...newFilter, fieldId: v, operator: 'equals' })}
+                onValueChange={(value) => setNewFilter({ ...newFilter, fieldId: value, operator: 'equals' })}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Selecionar Campo" />
+                  <SelectValue placeholder="Selecionar campo" />
                 </SelectTrigger>
                 <SelectContent>
-                  {enabledFields.map(field => (
+                  {enabledFields.map((field) => (
                     <SelectItem key={field.id} value={field.id}>
                       {field.name}
                     </SelectItem>
@@ -314,19 +306,19 @@ export function ListDisplaySettingsTab({
             )}
           </div>
 
-          {(newFilter.type === 'field' && newFilter.fieldId) && (
+          {newFilter.type === 'field' && newFilter.fieldId && (
             <div className="grid grid-cols-2 gap-2">
               <Select
                 value={newFilter.operator || 'equals'}
-                onValueChange={(v) => setNewFilter({ ...newFilter, operator: v as FilterConfig['operator'] })}
+                onValueChange={(value) => setNewFilter({ ...newFilter, operator: value as FilterConfig['operator'] })}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Operador" />
                 </SelectTrigger>
                 <SelectContent>
-                  {availableOperators.map(op => (
-                    <SelectItem key={op} value={op}>
-                      {operatorLabels[op]}
+                  {availableOperators.map((operator) => (
+                    <SelectItem key={operator} value={operator}>
+                      {operatorLabels[operator]}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -336,15 +328,15 @@ export function ListDisplaySettingsTab({
                 selectedField?.type === 'single_select' && selectedField.options ? (
                   <Select
                     value={(newFilter.value as string) || ''}
-                    onValueChange={(v) => setNewFilter({ ...newFilter, value: v })}
+                    onValueChange={(value) => setNewFilter({ ...newFilter, value })}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Valor" />
                     </SelectTrigger>
                     <SelectContent>
-                      {selectedField.options.map(opt => (
-                        <SelectItem key={opt} value={opt}>
-                          {opt}
+                      {selectedField.options.map((option) => (
+                        <SelectItem key={option} value={option}>
+                          {option}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -352,47 +344,47 @@ export function ListDisplaySettingsTab({
                 ) : selectedField?.type === 'boolean' ? (
                   <Select
                     value={String(newFilter.value) || ''}
-                    onValueChange={(v) => setNewFilter({ ...newFilter, value: v === 'true' })}
+                    onValueChange={(value) => setNewFilter({ ...newFilter, value: value === 'true' })}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Valor" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="true">Sim</SelectItem>
-                      <SelectItem value="false">Não</SelectItem>
+                      <SelectItem value="false">Nao</SelectItem>
                     </SelectContent>
                   </Select>
                 ) : selectedField?.type === 'date' || selectedField?.type === 'datetime' ? (
                   <Input
                     type="date"
                     value={(newFilter.value as string) || ''}
-                    onChange={(e) => setNewFilter({ ...newFilter, value: e.target.value })}
+                    onChange={(event) => setNewFilter({ ...newFilter, value: event.target.value })}
                   />
                 ) : selectedField?.type === 'number' || selectedField?.type === 'currency' ? (
                   <Input
                     type="number"
                     placeholder="Valor"
                     value={(newFilter.value as number) || ''}
-                    onChange={(e) => setNewFilter({ ...newFilter, value: parseFloat(e.target.value) })}
+                    onChange={(event) => setNewFilter({ ...newFilter, value: parseFloat(event.target.value) })}
                   />
                 ) : (
                   <Input
                     placeholder="Valor"
                     value={(newFilter.value as string) || ''}
-                    onChange={(e) => setNewFilter({ ...newFilter, value: e.target.value })}
+                    onChange={(event) => setNewFilter({ ...newFilter, value: event.target.value })}
                   />
                 )
               )}
             </div>
           )}
 
-          <Button 
-            onClick={handleAddFilter} 
+          <Button
+            onClick={handleAddFilter}
             disabled={!newFilter.type || (newFilter.type === 'field' && !newFilter.fieldId) || (newFilter.type === 'tag' && !newFilter.tagId)}
             className="w-full"
           >
-            <Plus className="h-4 w-4 mr-2" />
-            Adicionar Filtro
+            <Plus className="mr-2 h-4 w-4" />
+            Adicionar filtro
           </Button>
         </div>
       </div>

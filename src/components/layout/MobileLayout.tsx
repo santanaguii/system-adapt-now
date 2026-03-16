@@ -4,8 +4,9 @@ import { NoteEditor } from '@/components/notes/NoteEditor';
 import { NoteFormattingHints } from '@/components/notes/NoteFormattingHints';
 import { ActivityList } from '@/components/activities/ActivityList';
 import { Button } from '@/components/ui/button';
+import { Brand } from '@/components/brand/Brand';
 import { LogOut, User, Settings, FileText, CheckSquare } from 'lucide-react';
-import { Activity, CustomField, Tag, SortOption, DailyNote, NoteSearchResult, LineType, ActivityListDisplaySettings, FilterConfig, ActivityCreationMode, NoteLine, NoteTemplate } from '@/types';
+import { Activity, CustomField, Tag, SortOption, DailyNote, NoteSearchResult, LineType, ActivityListDisplaySettings, FilterConfig, NoteLine, NoteTemplate } from '@/types';
 import { SaveStatus } from '@/hooks/useNotes';
 
 interface MobileLayoutProps {
@@ -55,7 +56,6 @@ interface MobileLayoutProps {
   sortOption: SortOption;
   onSortChange: (sort: SortOption) => void;
   allowReopenCompleted: boolean;
-  activityCreationMode: ActivityCreationMode;
 }
 
 export function MobileLayout({
@@ -100,17 +100,18 @@ export function MobileLayout({
   sortOption,
   onSortChange,
   allowReopenCompleted,
-  activityCreationMode,
 }: MobileLayoutProps) {
   const [activeTab, setActiveTab] = useState<'notes' | 'activities'>('notes');
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-background">
-      {/* Header */}
-      <div className="flex items-center justify-between px-3 py-2 border-b bg-muted/30">
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <User className="h-4 w-4" />
-          <span className="truncate max-w-[120px]">{username}</span>
+      <div className="flex items-center justify-between border-b bg-muted/30 px-3 py-2">
+        <div className="min-w-0">
+          <Brand compact />
+          <div className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
+            <User className="h-3.5 w-3.5" />
+            <span className="truncate max-w-[150px]">{username}</span>
+          </div>
         </div>
         <div className="flex items-center gap-1">
           <Button variant="ghost" size="icon" onClick={onOpenSettings} className="h-8 w-8">
@@ -182,7 +183,6 @@ export function MobileLayout({
             sortOption={sortOption}
             onSortChange={onSortChange}
             allowReopenCompleted={allowReopenCompleted}
-            activityCreationMode={activityCreationMode}
           />
         </TabsContent>
       </Tabs>
