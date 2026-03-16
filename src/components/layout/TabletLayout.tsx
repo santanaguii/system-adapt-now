@@ -183,6 +183,7 @@ export function TabletLayout({
           {/* Activities Panel */}
           <ResizablePanel defaultSize={45} minSize={30}>
             <ActivityList
+              currentDate={currentDate}
               activities={activities}
               tags={tags}
               customFields={customFields}

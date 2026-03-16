@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Activity, ActivityListDisplaySettings, CustomField, Tag } from '@/types';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Button } from '@/components/ui/button';
-import { Calendar, ChevronRight, Flag, GripVertical, Link2, Star, X } from 'lucide-react';
+import { Calendar, CheckCircle2, ChevronRight, Flag, GripVertical, Link2, Star, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -20,6 +20,7 @@ interface ActivityItemProps {
   dragHandleProps?: React.HTMLAttributes<HTMLDivElement>;
   allowReopen?: boolean;
   quickActions?: React.ReactNode;
+  completionState?: 'idle' | 'transitioning';
 }
 
 const priorityColors: Record<string, string> = {
@@ -41,6 +42,7 @@ export function ActivityItem({
   dragHandleProps,
   allowReopen = true,
   quickActions,
+  completionState = 'idle',
 }: ActivityItemProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState(activity.title);
@@ -100,12 +102,17 @@ export function ActivityItem({
   const priority = typeof activity.customFields.priority === 'string' ? activity.customFields.priority : null;
   const linkedNotes = getLinkedNoteDates(activity);
   const isFavorite = activity.customFields[ACTIVITY_META.favorite] === true;
+  const isCompleting = completionState === 'transitioning';
 
   const visibleFields = customFields.filter((field) => listDisplay.visibleFieldIds?.includes(field.id));
 
   return (
     <div
-      className={cn('activity-item group rounded-lg border border-transparent px-3 py-3 hover:border-border', activity.completed && 'activity-completed')}
+      className={cn(
+        'activity-item group rounded-lg border border-transparent px-3 py-3 hover:border-border',
+        activity.completed && 'activity-completed',
+        isCompleting && 'activity-completing border-emerald-300/70 bg-emerald-500/5'
+      )}
       onDoubleClick={() => onDoubleClick(activity)}
     >
       <div className="flex items-center gap-3">
@@ -145,6 +152,12 @@ export function ActivityItem({
               <div className="flex items-center gap-2">
                 <span className={cn('truncate', activity.completed && 'line-through')}>{activity.title}</span>
                 {isFavorite && <Star className="h-3.5 w-3.5 fill-current text-amber-500" />}
+                {isCompleting && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-300">
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                    Concluida
+                  </span>
+                )}
                 {listDisplay.showTags && activityTags.length > 0 && (
                   <div className="flex gap-1">
                     {activityTags.map((tag) => (

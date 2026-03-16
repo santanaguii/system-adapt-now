@@ -465,6 +465,7 @@ const Index = () => {
             <ResizablePanel defaultSize={35} minSize={20}>
               <Suspense fallback={<SectionFallback />}>
                 <ActivityList
+                  currentDate={currentDate}
                   activities={sortedActivities}
                   tags={settings.tags}
                   customFields={settings.customFields}

@@ -1,10 +1,11 @@
-import { Suspense, lazy, useMemo, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Activity, Tag, CustomField, SortOption, ActivityCreationMode, ActivityListDisplaySettings, FilterConfig } from '@/types';
 import { ActivityItem } from './ActivityItem';
+import { ActivitySchedule } from './ActivitySchedule';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Plus, Filter, Settings, ChevronDown, ChevronUp, Search, ArrowUpDown, Tag as TagIcon, CalendarClock, FolderKanban, Inbox, LoaderCircle } from 'lucide-react';
+import { Plus, Filter, Settings, ChevronDown, ChevronUp, Search, ArrowUpDown, Tag as TagIcon, CalendarClock, Inbox, CalendarRange, ListTodo } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
   DropdownMenu,
@@ -43,6 +44,7 @@ import {
   useSortable,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   ACTIVITY_META,
   buildDependencySyncUpdates,
@@ -65,8 +67,10 @@ const ActivityCreateDialog = lazy(() =>
 );
 
 type ActivityViewMode = 'all' | 'today' | 'week' | 'month' | 'backlog' | 'waiting' | 'projects';
+const COMPLETION_PREVIEW_MS = 900;
 
 interface ActivityListProps {
+  currentDate: Date;
   activities: { active: Activity[]; completed: Activity[] };
   tags: Tag[];
   customFields: CustomField[];
@@ -84,6 +88,11 @@ interface ActivityListProps {
   activityCreationMode: ActivityCreationMode;
 }
 
+interface SelectedActivityState {
+  id: string;
+  readOnly: boolean;
+}
+
 function SortableActivityItem({
   activity,
   tags,
@@ -95,6 +104,7 @@ function SortableActivityItem({
   onDoubleClick,
   allowReopen,
   quickActions,
+  completionState,
 }: {
   activity: Activity;
   tags: Tag[];
@@ -106,6 +116,7 @@ function SortableActivityItem({
   onDoubleClick: (activity: Activity) => void;
   allowReopen: boolean;
   quickActions?: React.ReactNode;
+  completionState?: 'idle' | 'transitioning';
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: activity.id });
 
@@ -127,6 +138,7 @@ function SortableActivityItem({
         dragHandleProps={listeners}
         allowReopen={allowReopen}
         quickActions={quickActions}
+        completionState={completionState}
       />
     </div>
   );
@@ -138,6 +150,7 @@ function getRelevantDate(activity: Activity) {
 }
 
 export function ActivityList({
+  currentDate,
   activities,
   tags,
   customFields,
@@ -154,9 +167,10 @@ export function ActivityList({
   allowReopenCompleted,
   activityCreationMode,
 }: ActivityListProps) {
+  const [panelMode, setPanelMode] = useState<'list' | 'schedule'>('list');
   const [newActivityTitle, setNewActivityTitle] = useState('');
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
-  const [selectedActivity, setSelectedActivity] = useState<Activity | null>(null);
+  const [selectedActivityState, setSelectedActivityState] = useState<SelectedActivityState | null>(null);
   const [showCompleted, setShowCompleted] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearching, setIsSearching] = useState(false);
@@ -167,13 +181,29 @@ export function ActivityList({
   const [viewMode, setViewMode] = useState<ActivityViewMode>('all');
   const [selectedProject, setSelectedProject] = useState<string>('all');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [completingActivities, setCompletingActivities] = useState<Record<string, Activity>>({});
+  const completionTimeoutsRef = useRef<Map<string, number>>(new Map());
+  const completingActivitiesRef = useRef<Record<string, Activity>>({});
 
   const todayKey = getDateKeyInTimeZone();
   const tomorrowKey = addDaysToDateKey(todayKey, 1);
   const nextWeekKey = addDaysToDateKey(todayKey, 7);
   const monthEndKey = endOfMonthDateKey(todayKey);
   const projectNames = useMemo(() => deriveProjects(activities.active), [activities.active]);
-  const allActivities = useMemo(() => [...activities.active, ...activities.completed], [activities.active, activities.completed]);
+  const allActivities = useMemo(() => {
+    const merged = new Map<string, Activity>();
+    [...activities.active, ...activities.completed].forEach((activity) => {
+      merged.set(activity.id, activity);
+    });
+    Object.values(completingActivities).forEach((activity) => {
+      merged.set(activity.id, activity);
+    });
+    return Array.from(merged.values());
+  }, [activities.active, activities.completed, completingActivities]);
+  const selectedActivity = useMemo(
+    () => selectedActivityState ? allActivities.find((activity) => activity.id === selectedActivityState.id) ?? null : null,
+    [allActivities, selectedActivityState]
+  );
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
@@ -300,8 +330,56 @@ export function ActivityList({
 
   const filteredActive = filterActivities(activities.active);
   const filteredCompleted = filterActivities(activities.completed);
+  const displayActive = filteredActive.map((activity) => completingActivities[activity.id] ?? activity);
   const listFields = customFields.filter((field) => field.enabled && (field.display === 'list' || field.display === 'both'));
-  const canDrag = viewMode === 'all' && selectedTags.length === 0 && !searchQuery.trim() && savedFilters.length === 0;
+  const canDrag =
+    viewMode === 'all' &&
+    selectedTags.length === 0 &&
+    !searchQuery.trim() &&
+    savedFilters.length === 0 &&
+    !displayActive.some((activity) => activity.id in completingActivities);
+
+  useEffect(() => {
+    completingActivitiesRef.current = completingActivities;
+  }, [completingActivities]);
+
+  useEffect(() => {
+    if (selectedActivityState && !selectedActivity) {
+      setSelectedActivityState(null);
+    }
+  }, [selectedActivity, selectedActivityState]);
+
+  useEffect(() => {
+    const activeIds = new Set(activities.active.map((activity) => activity.id));
+
+    setCompletingActivities((prev) => {
+      let changed = false;
+      const next: Record<string, Activity> = {};
+
+      Object.entries(prev).forEach(([id, activity]) => {
+        if (activeIds.has(id)) {
+          next[id] = activity;
+          return;
+        }
+
+        changed = true;
+        const timeoutId = completionTimeoutsRef.current.get(id);
+        if (timeoutId !== undefined) {
+          window.clearTimeout(timeoutId);
+          completionTimeoutsRef.current.delete(id);
+        }
+      });
+
+      return changed ? next : prev;
+    });
+  }, [activities.active]);
+
+  useEffect(() => {
+    return () => {
+      completionTimeoutsRef.current.forEach((timeoutId) => window.clearTimeout(timeoutId));
+      completionTimeoutsRef.current.clear();
+    };
+  }, []);
 
   const waitingCount = activities.active.filter((activity) => Boolean(getBlockedBy(activity))).length;
   const backlogCount = activities.active.filter((activity) => {
@@ -401,7 +479,72 @@ export function ActivityList({
     });
   };
 
+  const handleToggleComplete = useCallback((id: string) => {
+    const pendingPreview = completingActivitiesRef.current[id];
+    if (pendingPreview) {
+      const timeoutId = completionTimeoutsRef.current.get(id);
+      if (timeoutId !== undefined) {
+        window.clearTimeout(timeoutId);
+        completionTimeoutsRef.current.delete(id);
+      }
+
+      setCompletingActivities((prev) => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+      return;
+    }
+
+    const activeActivity = activities.active.find((activity) => activity.id === id);
+    if (!activeActivity) {
+      onToggleComplete(id);
+      return;
+    }
+
+    const previewActivity: Activity = {
+      ...activeActivity,
+      completed: true,
+      status: 'done',
+      completedAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    setCompletingActivities((prev) => ({
+      ...prev,
+      [id]: previewActivity,
+    }));
+
+    const timeoutId = window.setTimeout(() => {
+      completionTimeoutsRef.current.delete(id);
+      setCompletingActivities((prev) => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+      onToggleComplete(id);
+    }, COMPLETION_PREVIEW_MS);
+
+    completionTimeoutsRef.current.set(id, timeoutId);
+  }, [activities.active, onToggleComplete]);
+
+  const handleOpenActivityDetail = useCallback((activity: Activity) => {
+    setSelectedActivityState({
+      id: activity.id,
+      readOnly: activity.completed,
+    });
+  }, []);
+
+  const handleOpenCalendarActivityDetail = useCallback((activity: Activity) => {
+    setSelectedActivityState({
+      id: activity.id,
+      readOnly: true,
+    });
+  }, []);
+
   const renderActivity = (activity: Activity, sortable = false) => {
+    const isCompleting = activity.id in completingActivities;
+
     if (sortable) {
       return (
         <SortableActivityItem
@@ -410,12 +553,13 @@ export function ActivityList({
           tags={tags}
           customFields={listFields}
           listDisplay={listDisplay}
-          onToggleComplete={onToggleComplete}
+          onToggleComplete={handleToggleComplete}
           onUpdate={onUpdate}
           onDelete={setDeleteConfirm}
-          onDoubleClick={setSelectedActivity}
-          allowReopen={allowReopenCompleted}
+          onDoubleClick={handleOpenActivityDetail}
+          allowReopen={allowReopenCompleted || isCompleting}
           quickActions={shouldShowQuickDateActions(activity) ? quickActions(activity) : undefined}
+          completionState={isCompleting ? 'transitioning' : 'idle'}
         />
       );
     }
@@ -427,12 +571,13 @@ export function ActivityList({
         tags={tags}
         customFields={listFields}
         listDisplay={listDisplay}
-        onToggleComplete={onToggleComplete}
+        onToggleComplete={handleToggleComplete}
         onUpdate={onUpdate}
         onDelete={setDeleteConfirm}
-        onDoubleClick={setSelectedActivity}
-        allowReopen={allowReopenCompleted}
+        onDoubleClick={handleOpenActivityDetail}
+        allowReopen={allowReopenCompleted || isCompleting}
         quickActions={shouldShowQuickDateActions(activity) ? quickActions(activity) : undefined}
+        completionState={isCompleting ? 'transitioning' : 'idle'}
       />
     );
   };
@@ -441,97 +586,119 @@ export function ActivityList({
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
       <div className="shrink-0 border-b px-4 py-3">
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold">Atividades</h2>
+          <div className="flex items-center gap-3">
+            <h2 className="text-lg font-semibold">Atividades</h2>
+            <Tabs value={panelMode} onValueChange={(value) => setPanelMode(value as 'list' | 'schedule')}>
+              <TabsList className="h-8">
+                <TabsTrigger value="list" className="gap-1 px-2.5 text-xs">
+                  <ListTodo className="h-3.5 w-3.5" />
+                  Lista
+                </TabsTrigger>
+                <TabsTrigger value="schedule" className="gap-1 px-2.5 text-xs">
+                  <CalendarRange className="h-3.5 w-3.5" />
+                  Cronograma
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
+          </div>
           <div className="flex items-center gap-1">
-            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setIsSearching((prev) => !prev)}>
-              <Search className="h-4 w-4" />
-            </Button>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-8 w-8">
-                  <ArrowUpDown className="h-4 w-4" />
+            {panelMode === 'list' && (
+              <>
+                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setIsSearching((prev) => !prev)}>
+                  <Search className="h-4 w-4" />
                 </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuLabel>Ordenar por</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuRadioGroup value={sortOption} onValueChange={(value) => onSortChange(value as SortOption)}>
-                  {Object.entries(sortLabels).map(([value, label]) => (
-                    <DropdownMenuRadioItem key={value} value={value}>
-                      {label}
-                    </DropdownMenuRadioItem>
-                  ))}
-                </DropdownMenuRadioGroup>
-              </DropdownMenuContent>
-            </DropdownMenu>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-8 w-8">
-                  <Filter className="h-4 w-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuLabel>Filtrar por tags</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                {tags.map((tag) => (
-                  <DropdownMenuCheckboxItem
-                    key={tag.id}
-                    checked={selectedTags.includes(tag.id)}
-                    onCheckedChange={() =>
-                      setSelectedTags((prev) => (prev.includes(tag.id) ? prev.filter((id) => id !== tag.id) : [...prev, tag.id]))
-                    }
-                  >
-                    <span className="mr-2 h-2 w-2 rounded-full" style={{ backgroundColor: tag.color }} />
-                    {tag.name}
-                  </DropdownMenuCheckboxItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="icon" className="h-8 w-8">
+                      <ArrowUpDown className="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuLabel>Ordenar por</DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuRadioGroup value={sortOption} onValueChange={(value) => onSortChange(value as SortOption)}>
+                      {Object.entries(sortLabels).map(([value, label]) => (
+                        <DropdownMenuRadioItem key={value} value={value}>
+                          {label}
+                        </DropdownMenuRadioItem>
+                      ))}
+                    </DropdownMenuRadioGroup>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="icon" className="h-8 w-8">
+                      <Filter className="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuLabel>Filtrar por tags</DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    {tags.map((tag) => (
+                      <DropdownMenuCheckboxItem
+                        key={tag.id}
+                        checked={selectedTags.includes(tag.id)}
+                        onCheckedChange={() =>
+                          setSelectedTags((prev) => (prev.includes(tag.id) ? prev.filter((id) => id !== tag.id) : [...prev, tag.id]))
+                        }
+                      >
+                        <span className="mr-2 h-2 w-2 rounded-full" style={{ backgroundColor: tag.color }} />
+                        {tag.name}
+                      </DropdownMenuCheckboxItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </>
+            )}
             <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onOpenSettings}>
               <Settings className="h-4 w-4" />
             </Button>
           </div>
         </div>
 
-        <div className="mt-3 flex flex-wrap gap-2">
-          {viewOptions.map((option) => {
-            const Icon = option.icon;
-            return (
-              <Button key={option.id} variant={viewMode === option.id ? 'default' : 'outline'} size="sm" onClick={() => setViewMode(option.id)}>
-                <Icon className="mr-2 h-4 w-4" />
-                {option.label}
-                <Badge variant="secondary" className="ml-2">{option.count}</Badge>
-              </Button>
-            );
-          })}
-        </div>
+        {panelMode === 'list' && (
+          <>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {viewOptions.map((option) => {
+                const Icon = option.icon;
+                return (
+                  <Button key={option.id} variant={viewMode === option.id ? 'default' : 'outline'} size="sm" onClick={() => setViewMode(option.id)}>
+                    <Icon className="mr-2 h-4 w-4" />
+                    {option.label}
+                    <Badge variant="secondary" className="ml-2">{option.count}</Badge>
+                  </Button>
+                );
+              })}
+            </div>
 
-        {viewMode === 'projects' && (
-          <div className="mt-3">
-            <Select value={selectedProject} onValueChange={setSelectedProject}>
-              <SelectTrigger className="h-9">
-                <SelectValue placeholder="Todos os projetos" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todos os projetos</SelectItem>
-                {projectNames.map((project) => (
-                  <SelectItem key={project} value={project}>
-                    {project}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+            {viewMode === 'projects' && (
+              <div className="mt-3">
+                <Select value={selectedProject} onValueChange={setSelectedProject}>
+                  <SelectTrigger className="h-9">
+                    <SelectValue placeholder="Todos os projetos" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todos os projetos</SelectItem>
+                    {projectNames.map((project) => (
+                      <SelectItem key={project} value={project}>
+                        {project}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+          </>
         )}
       </div>
 
-      {isSearching && (
+      {panelMode === 'list' && isSearching && (
         <div className="shrink-0 border-b px-4 py-2">
           <Input placeholder="Buscar atividades, projetos, bloqueios..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="h-8" autoFocus />
         </div>
       )}
 
-      {selectedTags.length > 0 && (
+      {panelMode === 'list' && selectedTags.length > 0 && (
         <div className="shrink-0 flex flex-wrap gap-1 border-b px-4 py-2">
           {selectedTags.map((tagId) => {
             const tag = tags.find((item) => item.id === tagId);
@@ -551,7 +718,7 @@ export function ActivityList({
         </div>
       )}
 
-      {activityCreationMode === 'simple' ? (
+      {panelMode === 'list' && (activityCreationMode === 'simple' ? (
         <div className="shrink-0 flex flex-col gap-2 border-b px-4 py-3">
           <div className="flex items-center gap-2">
             <Input
@@ -612,8 +779,17 @@ export function ActivityList({
             Nova Atividade
           </Button>
         </div>
-      )}
+      ))}
 
+      {panelMode === 'schedule' ? (
+        <ActivitySchedule
+          currentDate={currentDate}
+          activeActivities={activities.active}
+          allActivities={allActivities}
+          onOpenActivity={handleOpenCalendarActivityDetail}
+          onToggleComplete={handleToggleComplete}
+        />
+      ) : (
       <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2">
         {viewMode === 'projects' && selectedProject === 'all' ? (
           <div className="space-y-4">
@@ -621,7 +797,7 @@ export function ActivityList({
               <div className="py-8 text-center text-muted-foreground">Nenhum projeto associado ainda.</div>
             ) : (
               projectNames.map((project) => {
-                const projectActivities = filteredActive.filter((activity) => getProjectName(activity) === project);
+                const projectActivities = displayActive.filter((activity) => getProjectName(activity) === project);
                 if (projectActivities.length === 0) return null;
                 return (
                   <div key={project} className="space-y-2">
@@ -636,17 +812,17 @@ export function ActivityList({
           </div>
         ) : canDrag ? (
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-            <SortableContext items={filteredActive.map((activity) => activity.id)} strategy={verticalListSortingStrategy}>
-              {filteredActive.map((activity) => renderActivity(activity, true))}
+            <SortableContext items={displayActive.map((activity) => activity.id)} strategy={verticalListSortingStrategy}>
+              {displayActive.map((activity) => renderActivity(activity, true))}
             </SortableContext>
           </DndContext>
         ) : (
           <div className="space-y-1">
-            {filteredActive.map((activity) => renderActivity(activity))}
+            {displayActive.map((activity) => renderActivity(activity))}
           </div>
         )}
 
-        {filteredActive.length === 0 && (
+        {displayActive.length === 0 && (
           <div className="py-8 text-center text-muted-foreground">
             {searchQuery ? 'Nenhuma atividade encontrada' : 'Nenhuma atividade neste recorte'}
           </div>
@@ -670,10 +846,10 @@ export function ActivityList({
                     tags={tags}
                     customFields={listFields}
                     listDisplay={listDisplay}
-                    onToggleComplete={onToggleComplete}
+                    onToggleComplete={handleToggleComplete}
                     onUpdate={onUpdate}
                     onDelete={setDeleteConfirm}
-                    onDoubleClick={setSelectedActivity}
+                    onDoubleClick={handleOpenActivityDetail}
                     allowReopen={allowReopenCompleted}
                   />
                 ))}
@@ -682,8 +858,9 @@ export function ActivityList({
           </div>
         )}
       </div>
+      )}
 
-      {selectedActivity && (
+      {selectedActivity && selectedActivityState && (
         <Suspense fallback={null}>
           <ActivityDetail
             activity={selectedActivity}
@@ -699,8 +876,8 @@ export function ActivityList({
               });
               syncDependencies(activityId, selectedActivity.customFields, payload.customFields);
             }}
-            onClose={() => setSelectedActivity(null)}
-            isReadOnly={selectedActivity.completed}
+            onClose={() => setSelectedActivityState(null)}
+            isReadOnly={selectedActivityState.readOnly}
           />
         </Suspense>
       )}

@@ -1,6 +1,6 @@
 # Deploy Hostinger - v2.sistema-atividades.com.br
 
-Ultima atualizacao: 2026-03-09
+Ultima atualizacao: 2026-03-10
 
 ## Objetivo
 
@@ -53,6 +53,29 @@ Publicar este projeto somente no destino vinculado a `v2.sistema-atividades.com.
   - autenticacao bem-sucedida com a senha corrigida
 
 ## Deploy executado
+
+### Deploy mais recente
+
+- Data do deploy: `2026-03-10`
+- Timestamp remoto do backup/deploy: `20260310-015912`
+- Estrategia:
+  - build local com `vite build`
+  - backup completo do site atual no servidor
+  - upload do novo `dist/` para diretorio temporario
+  - troca atomica do diretorio publicado
+  - validacao do nginx e recarga do servico
+- Backup criado em:
+  - diretorio: `/var/www/deploy-backups/v2-sistema-atividades-20260310-015912-dir`
+  - tarball: `/var/www/deploy-backups/v2-sistema-atividades-20260310-015912-predeploy.tar.gz`
+- Validacoes pos-deploy:
+  - `nginx -t`: ok
+  - `systemctl reload nginx`: executado
+  - `https://v2.sistema-atividades.com.br`: HTTP `200`
+  - `index.html` publicado referencia:
+    - `/assets/index-Cxwt_jN6.js`
+    - `/assets/index-BdhxoQ9l.css`
+
+### Deploy anterior
 
 - Data/hora do deploy: `2026-03-09 03:39` BRT
 - Estrategia:

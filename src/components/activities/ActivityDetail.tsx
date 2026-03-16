@@ -553,23 +553,43 @@ export function ActivityDetail({
               tags: (
                 <div className="space-y-2">
                   <Label>Tags</Label>
-                  <div className="flex flex-wrap gap-2">
-                    {tags.map((tag) => (
-                      <Badge
-                        key={tag.id}
-                        variant={selectedTags.includes(tag.id) ? 'default' : 'outline'}
-                        className={cn('transition-colors', !isReadOnly && 'cursor-pointer')}
-                        style={
-                          selectedTags.includes(tag.id)
-                            ? { backgroundColor: tag.color, borderColor: tag.color }
-                            : { borderColor: tag.color, color: tag.color }
-                        }
-                        onClick={() => toggleTag(tag.id)}
-                      >
-                        {tag.name}
-                      </Badge>
-                    ))}
-                  </div>
+                  {isReadOnly ? (
+                    <div className="flex flex-wrap gap-2">
+                      {tags.filter((tag) => selectedTags.includes(tag.id)).length > 0 ? (
+                        tags
+                          .filter((tag) => selectedTags.includes(tag.id))
+                          .map((tag) => (
+                            <Badge
+                              key={tag.id}
+                              variant="default"
+                              style={{ backgroundColor: tag.color, borderColor: tag.color }}
+                            >
+                              {tag.name}
+                            </Badge>
+                          ))
+                      ) : (
+                        <div className="text-sm text-muted-foreground">-</div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="flex flex-wrap gap-2">
+                      {tags.map((tag) => (
+                        <Badge
+                          key={tag.id}
+                          variant={selectedTags.includes(tag.id) ? 'default' : 'outline'}
+                          className={cn('transition-colors', !isReadOnly && 'cursor-pointer')}
+                          style={
+                            selectedTags.includes(tag.id)
+                              ? { backgroundColor: tag.color, borderColor: tag.color }
+                              : { borderColor: tag.color, color: tag.color }
+                          }
+                          onClick={() => toggleTag(tag.id)}
+                        >
+                          {tag.name}
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
                 </div>
               ),
               ...Object.fromEntries(

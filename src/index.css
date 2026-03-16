@@ -224,6 +224,27 @@
     animation: note-search-flash 1.1s ease-out 1;
   }
 
+  @keyframes activity-completing {
+    0% {
+      transform: scale(1);
+      box-shadow: 0 0 0 0 rgb(16 185 129 / 0);
+    }
+
+    35% {
+      transform: scale(1.01);
+      box-shadow: 0 0 0 4px rgb(16 185 129 / 0.18);
+    }
+
+    100% {
+      transform: scale(1);
+      box-shadow: 0 0 0 0 rgb(16 185 129 / 0);
+    }
+  }
+
+  .activity-completing {
+    animation: activity-completing 0.9s ease-out 1;
+  }
+
   .bg-activity-hover {
     background-color: hsl(var(--activity-hover));
   }

@@ -167,6 +167,7 @@ export function MobileLayout({
 
         <TabsContent value="activities" className="m-0 min-h-0 flex-1 overflow-hidden">
           <ActivityList
+            currentDate={currentDate}
             activities={activities}
             tags={tags}
             customFields={customFields}
