@@ -1,6 +1,6 @@
 # Deploy Hostinger - v2.sistema-atividades.com.br
 
-Ultima atualizacao: 2026-03-10
+Ultima atualizacao: 2026-03-16
 
 ## Objetivo
 
@@ -26,9 +26,14 @@ Publicar este projeto somente no destino vinculado a `v2.sistema-atividades.com.
 - Configuracao nginx confirmada:
   - arquivo: `/etc/nginx/sites-available/v2-sistema.conf`
   - root publicado: `/var/www/v2-sistema-atividades`
+- Automacao configurada no GitHub:
+  - workflow: `.github/workflows/deploy-hostinger-v2.yml`
+  - trigger: `workflow_dispatch`
+  - secret do repositorio: `HOSTINGER_SSH_KEY`
+  - fingerprint da chave do GitHub Actions: `SHA256:JLYYABgbgPlffKFC93YApsibuXKcQiIgGTBFt/qQVAY`
 - HTML atualmente publicado referencia:
-  - `/assets/index-hYc-pC4G.js`
-  - `/assets/index-B7UhHBdj.css`
+  - `/assets/index-Bny5zUxt.js`
+  - `/assets/index-B8ONd6Fy.css`
 - Nao foi encontrada nesta maquina:
   - configuracao em `~/.ssh/config`
   - perfil local de WinSCP
@@ -37,11 +42,12 @@ Publicar este projeto somente no destino vinculado a `v2.sistema-atividades.com.
 
 ## O que ainda falta confirmar
 
-- Metodo de acesso ao servidor:
-- SSH na porta `22` e o meio mais provavel
-- Usuario de acesso SSH
-- Caminho remoto exato do subdominio `v2.sistema-atividades.com.br`
-- Estrategia de backup do build atualmente publicado
+- Nenhuma pendencia critica para este destino.
+- Confirmado neste deploy:
+  - SSH na porta `22`
+  - usuario `root`
+  - root publicado em `/var/www/v2-sistema-atividades`
+  - backup remoto completo antes da troca
 
 ## Tentativas realizadas
 
@@ -55,6 +61,31 @@ Publicar este projeto somente no destino vinculado a `v2.sistema-atividades.com.
 ## Deploy executado
 
 ### Deploy mais recente
+
+- Data do deploy: `2026-03-16 22:28:53` BRT
+- Timestamp remoto do backup/deploy: `20260317-012853`
+- Estrategia:
+  - build local com `npm.cmd run build` (`vite build`)
+  - empacotamento do `dist/` em `tar.gz`
+  - upload do pacote via SFTP para `/tmp/v2-sistema-atividades-deploy.tar.gz`
+  - backup completo do site atual no servidor
+  - extracao em diretorio temporario
+  - troca atomica do diretorio publicado
+  - validacao do nginx e recarga do servico
+- Backup criado em:
+  - diretorio: `/var/www/deploy-backups/v2-sistema-atividades-20260317-012853-dir`
+  - tarball: `/var/www/deploy-backups/v2-sistema-atividades-20260317-012853-predeploy.tar.gz`
+- Validacoes pos-deploy:
+  - `nginx -t`: ok
+  - `systemctl reload nginx`: executado
+  - `https://v2.sistema-atividades.com.br`: HTTP `200`
+  - `https://www.v2.sistema-atividades.com.br`: HTTP `200`
+  - `https://v2.sistema-atividades.com.br/assets/index-Bny5zUxt.js`: HTTP `200`
+  - `index.html` publicado referencia:
+    - `/assets/index-Bny5zUxt.js`
+    - `/assets/index-B8ONd6Fy.css`
+
+### Deploy anterior
 
 - Data do deploy: `2026-03-10`
 - Timestamp remoto do backup/deploy: `20260310-015912`
@@ -75,7 +106,7 @@ Publicar este projeto somente no destino vinculado a `v2.sistema-atividades.com.
     - `/assets/index-Cxwt_jN6.js`
     - `/assets/index-BdhxoQ9l.css`
 
-### Deploy anterior
+### Deploy anterior ao anterior
 
 - Data/hora do deploy: `2026-03-09 03:39` BRT
 - Estrategia:
@@ -96,6 +127,23 @@ Publicar este projeto somente no destino vinculado a `v2.sistema-atividades.com.
 ## Observacoes
 
 - O `nginx -t` emitiu warnings de `protocol options redefined` em outros arquivos de configuracao (`new-system.conf` e `redirects-www.conf`), mas a configuracao ficou valida e isso nao bloqueou o deploy deste subdominio.
+- A chave SSH dedicada do GitHub Actions foi instalada em `/root/.ssh/authorized_keys` para permitir deploy sem senha no workflow manual.
+
+## GitHub Actions
+
+- Workflow configurado:
+  - nome: `Deploy Hostinger v2`
+  - arquivo: `.github/workflows/deploy-hostinger-v2.yml`
+- O workflow:
+  - faz checkout do `ref` informado manualmente
+  - executa `npm ci` e `npm run build`
+  - empacota o `dist/`
+  - envia o pacote via SSH para o servidor
+  - cria backup remoto completo antes da troca
+  - valida `nginx -t`, recarrega o servico e testa a URL publicada
+- Como disparar:
+  - GitHub UI: `Actions -> Deploy Hostinger v2 -> Run workflow`
+  - GitHub CLI: `gh workflow run "Deploy Hostinger v2" --repo santanaguii/system-adapt-now --ref main -f ref=main`
 
 ## WWW do v2
 
@@ -131,4 +179,4 @@ Publicar este projeto somente no destino vinculado a `v2.sistema-atividades.com.
 
 ## Proximo passo
 
-Identificar a credencial ou mecanismo de acesso atualmente usado nesta maquina para publicar no servidor `72.60.57.196`.
+Disparar o workflow manualmente sempre que quiser publicar uma nova versao desse projeto.

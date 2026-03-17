@@ -1,0 +1,171 @@
+name: Deploy Hostinger v2
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch, tag or commit to deploy
+        required: true
+        default: main
+
+concurrency:
+  group: deploy-hostinger-v2
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Build and deploy to Hostinger
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DEPLOY_HOST: 72.60.57.196
+      DEPLOY_PORT: "22"
+      DEPLOY_USER: root
+      SITE_ROOT: /var/www/v2-sistema-atividades
+      BACKUP_ROOT: /var/www/deploy-backups
+      SITE_URL: https://v2.sistema-atividades.com.br
+      SITE_WWW_URL: https://www.v2.sistema-atividades.com.br
+
+    steps:
+      - name: Checkout selected ref
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build project
+        run: npm run build
+
+      - name: Capture built asset names
+        id: assets
+        run: |
+          set -euo pipefail
+          main_js="$(sed -n 's/.*src="\([^"]*index-[^"]*\.js\)".*/\1/p' dist/index.html | head -n1)"
+          main_css="$(sed -n 's/.*href="\([^"]*index-[^"]*\.css\)".*/\1/p' dist/index.html | head -n1)"
+          test -n "$main_js"
+          test -n "$main_css"
+          echo "main_js=$main_js" >> "$GITHUB_OUTPUT"
+          echo "main_css=$main_css" >> "$GITHUB_OUTPUT"
+
+      - name: Package dist
+        run: tar -czf dist-deploy.tar.gz -C dist .
+
+      - name: Configure SSH
+        env:
+          HOSTINGER_SSH_KEY: ${{ secrets.HOSTINGER_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$HOSTINGER_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          cat <<'EOF' > ~/.ssh/known_hosts
+          72.60.57.196 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIylSWk9IW8rqbqWzMMwNBzPdb8MBFQGE4BACdMlCUAs
+          EOF
+
+      - name: Upload package
+        id: upload
+        run: |
+          set -euo pipefail
+          remote_archive="/tmp/v2-sistema-atividades-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.tar.gz"
+          scp -P "$DEPLOY_PORT" dist-deploy.tar.gz "$DEPLOY_USER@$DEPLOY_HOST:$remote_archive"
+          echo "remote_archive=$remote_archive" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy on server
+        id: deploy
+        run: |
+          set -euo pipefail
+          deploy_output="$(
+            ssh -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" \
+              "SITE_ROOT='$SITE_ROOT' BACKUP_ROOT='$BACKUP_ROOT' REMOTE_ARCHIVE='${{ steps.upload.outputs.remote_archive }}' bash -s" <<'EOF'
+          set -euo pipefail
+          site_root="${SITE_ROOT:?}"
+          backup_root="${BACKUP_ROOT:?}"
+          remote_archive="${REMOTE_ARCHIVE:?}"
+          timestamp="$(date +%Y%m%d-%H%M%S)"
+          site_name="$(basename "$site_root")"
+          staging="${site_root}-staging-${timestamp}"
+          previous="${site_root}-prev-${timestamp}"
+          backup_dir="${backup_root}/${site_name}-${timestamp}-dir"
+          backup_tar="${backup_root}/${site_name}-${timestamp}-predeploy.tar.gz"
+
+          cleanup() {
+            rm -rf "$staging"
+            rm -f "$remote_archive"
+          }
+
+          rollback() {
+            code=$?
+            if [ -d "$previous" ]; then
+              rm -rf "$site_root"
+              mv "$previous" "$site_root"
+            fi
+            cleanup
+            exit "$code"
+          }
+
+          trap rollback ERR
+
+          test -d "$site_root"
+          mkdir -p "$backup_root"
+          cp -a "$site_root" "$backup_dir"
+          tar -C "$(dirname "$site_root")" -czf "$backup_tar" "$site_name"
+          mkdir -p "$staging"
+          tar -xzf "$remote_archive" -C "$staging"
+          test -f "$staging/index.html"
+          find "$staging" -type d -exec chmod 755 {} +
+          find "$staging" -type f -exec chmod 644 {} +
+          mv "$site_root" "$previous"
+          mv "$staging" "$site_root"
+          nginx -t
+          systemctl reload nginx
+          rm -rf "$previous"
+          trap - ERR
+          cleanup
+          printf 'timestamp=%s\n' "$timestamp"
+          printf 'backup_dir=%s\n' "$backup_dir"
+          printf 'backup_tar=%s\n' "$backup_tar"
+          EOF
+          )"
+          printf '%s\n' "$deploy_output"
+          backup_dir="$(printf '%s\n' "$deploy_output" | sed -n 's/^backup_dir=//p' | head -n1)"
+          backup_tar="$(printf '%s\n' "$deploy_output" | sed -n 's/^backup_tar=//p' | head -n1)"
+          timestamp="$(printf '%s\n' "$deploy_output" | sed -n 's/^timestamp=//p' | head -n1)"
+          test -n "$backup_dir"
+          test -n "$backup_tar"
+          test -n "$timestamp"
+          echo "backup_dir=$backup_dir" >> "$GITHUB_OUTPUT"
+          echo "backup_tar=$backup_tar" >> "$GITHUB_OUTPUT"
+          echo "timestamp=$timestamp" >> "$GITHUB_OUTPUT"
+
+      - name: Validate published site
+        run: |
+          set -euo pipefail
+          html="$(curl -fsSL "$SITE_URL")"
+          printf '%s' "$html" | grep -F "${{ steps.assets.outputs.main_js }}" > /dev/null
+          printf '%s' "$html" | grep -F "${{ steps.assets.outputs.main_css }}" > /dev/null
+          curl -fsSI "$SITE_URL${{ steps.assets.outputs.main_js }}" > /dev/null
+          curl -fsSI "$SITE_WWW_URL" > /dev/null
+
+      - name: Job summary
+        run: |
+          {
+            echo "## Hostinger deploy"
+            echo
+            echo "- Ref: \`${{ inputs.ref }}\`"
+            echo "- Site: \`$SITE_URL\`"
+            echo "- Backup dir: \`${{ steps.deploy.outputs.backup_dir }}\`"
+            echo "- Backup tar: \`${{ steps.deploy.outputs.backup_tar }}\`"
+            echo "- JS: \`${{ steps.assets.outputs.main_js }}\`"
+            echo "- CSS: \`${{ steps.assets.outputs.main_css }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
