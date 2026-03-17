@@ -8,8 +8,9 @@ describe('buildDefaultUserSettings', () => {
     expect(settings.user_id).toBe('user-1');
     expect(settings.allow_reopen_completed).toBe(true);
     expect(settings.autosave_enabled).toBe(true);
-    expect(settings.activity_creation_mode).toBe('simple');
+    expect(settings.activity_creation_mode).toBe('detailed');
     expect(settings.mobile_layout_mode).toBe('mobile');
+    expect(settings.note_line_spacing).toBe('35');
     expect(settings.saved_filters).toEqual([]);
     expect(settings.saved_sort).toEqual({ type: 'manual', direction: 'asc' });
   });

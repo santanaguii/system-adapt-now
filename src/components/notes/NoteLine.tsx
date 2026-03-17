@@ -20,12 +20,21 @@ interface NoteLineProps {
 }
 
 const lineTypeClasses: Record<string, string> = {
-  title: 'text-3xl font-bold text-editor-title leading-tight py-2 tracking-tight',
-  subtitle: 'text-xl font-semibold text-editor-subtitle leading-snug py-1.5 border-b border-border/40 pb-2',
-  quote: 'pl-4 border-l-4 border-editor-quote text-editor-quote italic bg-editor-quote-bg py-2 rounded-r-md',
-  paragraph: 'text-base text-foreground leading-relaxed',
+  title: 'text-3xl font-bold text-editor-title py-0.5 tracking-tight',
+  subtitle: 'text-xl font-semibold text-editor-subtitle py-0.5 border-b border-border/40 pb-1',
+  quote: 'pl-4 border-l-4 border-editor-quote text-editor-quote italic bg-editor-quote-bg py-1 rounded-r-md',
+  paragraph: 'text-base text-foreground',
   bullet: 'text-base text-foreground pl-7 relative before:content-["•"] before:absolute before:left-1.5 before:text-primary before:font-bold before:text-lg',
-  comment: 'text-sm text-muted-foreground/70 italic pl-4',
+  comment: 'text-sm text-muted-foreground/70 italic pl-4 py-0.5',
+};
+
+const lineTypeStyles: Record<string, React.CSSProperties> = {
+  title: { lineHeight: 'var(--note-line-height-heading)' },
+  subtitle: { lineHeight: 'var(--note-line-height-heading)' },
+  quote: { lineHeight: 'var(--note-line-height-quote)' },
+  paragraph: { lineHeight: 'var(--note-line-height-paragraph)' },
+  bullet: { lineHeight: 'var(--note-line-height-paragraph)' },
+  comment: { lineHeight: 'var(--note-line-height-comment)' },
 };
 
 export function NoteLine({
@@ -150,6 +159,7 @@ export function NoteLine({
             'placeholder:text-muted-foreground/50',
             lineTypeClasses[line.type] || lineTypeClasses.paragraph
           )}
+          style={lineTypeStyles[line.type] || lineTypeStyles.paragraph}
           rows={1}
         />
       </div>

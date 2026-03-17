@@ -120,6 +120,7 @@ export type FontFamily = 'inter' | 'system' | 'roboto' | 'opensans' | 'poppins';
 export type FontSize = 'small' | 'medium' | 'large';
 export type ColorTheme = 'amber' | 'blue' | 'green' | 'purple' | 'pink';
 export type ThemeMode = 'light' | 'dark' | 'system';
+export type NoteLineSpacing = number;
 
 // Layout mode for mobile devices
 export type MobileLayoutMode = 'mobile' | 'desktop';
@@ -130,6 +131,7 @@ export interface AppearanceSettings {
   colorTheme: ColorTheme;
   themeMode: ThemeMode;
   mobileLayoutMode: MobileLayoutMode;
+  noteLineSpacing: NoteLineSpacing;
 }
 
 export interface ActivityFormLayoutBlock {

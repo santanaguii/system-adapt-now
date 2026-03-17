@@ -47,6 +47,10 @@
     --editor-subtitle: 30 10% 25%;
     --editor-quote: 35 60% 45%;
     --editor-quote-bg: 35 40% 95%;
+    --note-line-height-heading: 1.07;
+    --note-line-height-paragraph: 1.33;
+    --note-line-height-quote: 1.29;
+    --note-line-height-comment: 1.20;
 
     /* Sidebar */
     --sidebar-background: 35 15% 97%;

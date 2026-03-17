@@ -221,10 +221,11 @@ export type Database = {
           font_family: string
           font_size: string
           id: string
-          list_display: Json | null
-          mobile_layout_mode: string | null
-          saved_filters: Json | null
-          saved_sort: Json | null
+            list_display: Json | null
+            mobile_layout_mode: string | null
+            note_line_spacing: string | null
+            saved_filters: Json | null
+            saved_sort: Json | null
           theme_mode: string
           user_id: string
         }
@@ -237,10 +238,11 @@ export type Database = {
           font_family?: string
           font_size?: string
           id?: string
-          list_display?: Json | null
-          mobile_layout_mode?: string | null
-          saved_filters?: Json | null
-          saved_sort?: Json | null
+            list_display?: Json | null
+            mobile_layout_mode?: string | null
+            note_line_spacing?: string | null
+            saved_filters?: Json | null
+            saved_sort?: Json | null
           theme_mode?: string
           user_id: string
         }
@@ -253,10 +255,11 @@ export type Database = {
           font_family?: string
           font_size?: string
           id?: string
-          list_display?: Json | null
-          mobile_layout_mode?: string | null
-          saved_filters?: Json | null
-          saved_sort?: Json | null
+            list_display?: Json | null
+            mobile_layout_mode?: string | null
+            note_line_spacing?: string | null
+            saved_filters?: Json | null
+            saved_sort?: Json | null
           theme_mode?: string
           user_id?: string
         }

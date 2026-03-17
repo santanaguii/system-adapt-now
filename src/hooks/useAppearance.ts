@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useTheme } from 'next-themes';
 import { supabase } from '@/integrations/supabase/client';
-import { FontFamily, FontSize, ColorTheme, ThemeMode, MobileLayoutMode, AppearanceSettings } from '@/types';
+import { FontFamily, FontSize, ColorTheme, ThemeMode, MobileLayoutMode, NoteLineSpacing, AppearanceSettings } from '@/types';
 import { upsertUserSettings } from '@/lib/user-settings';
 
 interface UserSettingsRow {
@@ -10,6 +10,7 @@ interface UserSettingsRow {
   color_theme: string;
   theme_mode: string;
   mobile_layout_mode?: string;
+  note_line_spacing?: string;
 }
 
 interface UseAppearanceOptions {
@@ -23,6 +24,7 @@ export const defaultAppearance: AppearanceSettings = {
   colorTheme: 'amber',
   themeMode: 'system',
   mobileLayoutMode: 'mobile',
+  noteLineSpacing: 35,
 };
 
 const fontFamilyMap: Record<FontFamily, string> = {
@@ -38,6 +40,49 @@ const fontSizeMap: Record<FontSize, string> = {
   medium: '16px',
   large: '18px',
 };
+
+const legacyNoteLineSpacingMap = {
+  compact: 12,
+  normal: 35,
+  relaxed: 70,
+} as const;
+
+function clampNoteLineSpacing(value: number) {
+  return Math.max(0, Math.min(100, value));
+}
+
+function interpolate(min: number, max: number, ratio: number) {
+  return (min + (max - min) * ratio).toFixed(2);
+}
+
+function getNoteLineSpacingVars(spacing: NoteLineSpacing) {
+  const ratio = clampNoteLineSpacing(spacing) / 100;
+
+  return {
+    '--note-line-height-heading': interpolate(0.92, 1.35, ratio),
+    '--note-line-height-paragraph': interpolate(1.0, 1.95, ratio),
+    '--note-line-height-quote': interpolate(1.02, 1.8, ratio),
+    '--note-line-height-comment': interpolate(0.98, 1.6, ratio),
+  };
+}
+
+function parseNoteLineSpacing(value: string | null | undefined) {
+  if (!value) {
+    return defaultAppearance.noteLineSpacing;
+  }
+
+  const normalizedValue = value.trim().toLowerCase();
+  if (normalizedValue in legacyNoteLineSpacingMap) {
+    return legacyNoteLineSpacingMap[normalizedValue as keyof typeof legacyNoteLineSpacingMap];
+  }
+
+  const numericValue = Number(normalizedValue.replace(',', '.'));
+  if (Number.isFinite(numericValue)) {
+    return clampNoteLineSpacing(numericValue);
+  }
+
+  return defaultAppearance.noteLineSpacing;
+}
 
 // Color themes - HSL values for each theme
 const colorThemes: Record<ColorTheme, { light: Record<string, string>; dark: Record<string, string> }> = {
@@ -129,6 +174,9 @@ export function applyAppearanceToDocument(appearance: AppearanceSettings, resolv
   root.style.setProperty('--font-family', fontFamilyMap[appearance.fontFamily]);
   document.body.style.fontFamily = fontFamilyMap[appearance.fontFamily];
   root.style.fontSize = fontSizeMap[appearance.fontSize];
+  Object.entries(getNoteLineSpacingVars(appearance.noteLineSpacing)).forEach(([property, value]) => {
+    root.style.setProperty(property, value);
+  });
 
   const isDark = resolvedTheme === 'dark';
   const themeColors = colorThemes[appearance.colorTheme][isDark ? 'dark' : 'light'];
@@ -158,7 +206,7 @@ export function useAppearance(options: UseAppearanceOptions = {}) {
       try {
         const { data, error } = await supabase
           .from('user_settings' as never)
-          .select('font_family, font_size, color_theme, theme_mode, mobile_layout_mode')
+          .select('font_family, font_size, color_theme, theme_mode, mobile_layout_mode, note_line_spacing')
           .eq('user_id', userId)
           .maybeSingle() as { data: UserSettingsRow | null; error: unknown };
 
@@ -169,9 +217,9 @@ export function useAppearance(options: UseAppearanceOptions = {}) {
             colorTheme: (data.color_theme || 'amber') as ColorTheme,
             themeMode: (data.theme_mode || 'system') as ThemeMode,
             mobileLayoutMode: (data.mobile_layout_mode || 'mobile') as MobileLayoutMode,
+            noteLineSpacing: parseNoteLineSpacing(data.note_line_spacing),
           };
           setAppearance(loaded);
-          setTheme(loaded.themeMode);
         }
       } catch (error) {
         console.error('Error loading appearance:', error);
@@ -188,15 +236,20 @@ export function useAppearance(options: UseAppearanceOptions = {}) {
     applyAppearanceToDocument(effectiveAppearance, resolvedTheme);
   }, [effectiveAppearance, resolvedTheme]);
 
+  useEffect(() => {
+    setTheme(effectiveAppearance.themeMode);
+  }, [effectiveAppearance.themeMode, setTheme]);
+
   // Update a single setting
   const updateAppearance = useCallback(async (updates: Partial<AppearanceSettings>) => {
-    const newAppearance = { ...appearance, ...updates };
+    const newAppearance = {
+      ...appearance,
+      ...updates,
+      noteLineSpacing: updates.noteLineSpacing !== undefined
+        ? clampNoteLineSpacing(updates.noteLineSpacing)
+        : appearance.noteLineSpacing,
+    };
     setAppearance(newAppearance);
-
-    // Sync theme mode with next-themes
-    if (updates.themeMode) {
-      setTheme(updates.themeMode);
-    }
 
     if (!userId) return;
 
@@ -207,6 +260,7 @@ export function useAppearance(options: UseAppearanceOptions = {}) {
       if (updates.colorTheme !== undefined) dbUpdates.color_theme = updates.colorTheme;
       if (updates.themeMode !== undefined) dbUpdates.theme_mode = updates.themeMode;
       if (updates.mobileLayoutMode !== undefined) dbUpdates.mobile_layout_mode = updates.mobileLayoutMode;
+      if (updates.noteLineSpacing !== undefined) dbUpdates.note_line_spacing = String(clampNoteLineSpacing(updates.noteLineSpacing));
 
       const { error } = await upsertUserSettings(userId, dbUpdates);
 
@@ -216,12 +270,14 @@ export function useAppearance(options: UseAppearanceOptions = {}) {
     } catch (error) {
       console.error('Error saving appearance:', error);
     }
-  }, [userId, appearance, setTheme]);
+  }, [userId, appearance]);
 
   const setPreviewAppearance = useCallback((nextAppearance: AppearanceSettings | null) => {
-    setPreviewAppearanceState(nextAppearance);
-    setTheme((nextAppearance ?? appearance).themeMode);
-  }, [appearance, setTheme]);
+    setPreviewAppearanceState(nextAppearance ? {
+      ...nextAppearance,
+      noteLineSpacing: clampNoteLineSpacing(nextAppearance.noteLineSpacing),
+    } : null);
+  }, []);
 
   return {
     appearance,

@@ -1,6 +1,7 @@
-import { FontFamily, FontSize, ColorTheme, ThemeMode, AppearanceSettings } from '@/types';
+import { FontFamily, FontSize, ColorTheme, ThemeMode, NoteLineSpacing, AppearanceSettings } from '@/types';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Slider } from '@/components/ui/slider';
 import { cn } from '@/lib/utils';
 import { Monitor, Moon, Sun } from 'lucide-react';
 
@@ -36,6 +37,14 @@ const themeModes: { value: ThemeMode; label: string; icon: React.ReactNode }[] =
   { value: 'dark', label: 'Escuro', icon: <Moon className="h-4 w-4" /> },
   { value: 'system', label: 'Sistema', icon: <Monitor className="h-4 w-4" /> },
 ];
+
+function getNoteSpacingLabel(value: NoteLineSpacing) {
+  if (value <= 20) return 'Bem compacto';
+  if (value <= 40) return 'Compacto';
+  if (value <= 60) return 'Equilibrado';
+  if (value <= 80) return 'Solto';
+  return 'Bem espacoso';
+}
 
 export function AppearanceSettingsTab({ appearance, onUpdate }: AppearanceSettingsProps) {
   return (
@@ -131,6 +140,28 @@ export function AppearanceSettingsTab({ appearance, onUpdate }: AppearanceSettin
               <span className="font-medium">{mode.label}</span>
             </button>
           ))}
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        <Label className="text-base font-medium">Espacamento das notas</Label>
+        <div className="rounded-xl border bg-muted/20 px-4 py-4">
+          <div className="mb-3 flex items-center justify-between gap-3 text-sm">
+            <span className="font-medium">{getNoteSpacingLabel(appearance.noteLineSpacing)}</span>
+            <span className="text-muted-foreground">{Math.round(appearance.noteLineSpacing)}%</span>
+          </div>
+          <Slider
+            value={[appearance.noteLineSpacing]}
+            min={0}
+            max={100}
+            step={1}
+            onValueChange={([value]) => onUpdate({ noteLineSpacing: value ?? 50 })}
+            className="py-2"
+          />
+          <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
+            <span>Bem compacto</span>
+            <span>Bem espacoso</span>
+          </div>
         </div>
       </div>
     </div>

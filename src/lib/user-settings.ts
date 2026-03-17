@@ -41,6 +41,7 @@ export function buildDefaultUserSettings(userId: string): TablesInsert<'user_set
     color_theme: 'amber',
     theme_mode: 'system',
     mobile_layout_mode: 'mobile',
+    note_line_spacing: '35',
   };
 }
 
