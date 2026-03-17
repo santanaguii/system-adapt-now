@@ -64,6 +64,28 @@ This project is built with:
 
 Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
 
+## Android APK via GitHub Actions
+
+This repository now has a manual workflow to generate an Android APK.
+
+How to run it:
+
+```sh
+gh workflow run "Build Android APK" --repo santanaguii/system-adapt-now --ref main -f ref=main
+```
+
+Or open GitHub:
+
+- `Actions -> Build Android APK -> Run workflow`
+
+What it does:
+
+- installs dependencies
+- builds the Vite app
+- syncs the Capacitor Android project
+- runs the Gradle debug build
+- publishes the APK as a downloadable workflow artifact
+
 ## Supabase function
 
 The password recovery flow now depends on the Edge Function in `supabase/functions/reset-password/index.ts`.
