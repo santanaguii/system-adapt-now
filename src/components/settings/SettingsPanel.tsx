@@ -493,9 +493,9 @@ export function SettingsPanel({
           </div>
         </DialogHeader>
 
-        <div className="flex-1 min-h-0 overflow-y-auto px-4 py-3">
-          <Tabs defaultValue="general" className="flex min-h-full flex-col gap-3">
-            <TabsList className="grid h-auto w-full shrink-0 grid-cols-2 gap-1 sm:grid-cols-4 lg:grid-cols-8">
+        <div className="flex-1 min-h-0 overflow-y-auto px-4 pb-3 pt-2">
+          <Tabs defaultValue="general" className="flex min-h-full flex-col gap-4">
+            <TabsList className="grid h-auto w-full shrink-0 grid-cols-2 gap-1 rounded-xl border bg-muted/20 p-1 sm:grid-cols-4">
               <TabsTrigger className="whitespace-normal px-2 py-2 text-xs sm:text-sm" value="general">Geral</TabsTrigger>
               <TabsTrigger className="whitespace-normal px-2 py-2 text-xs sm:text-sm" value="list">Lista</TabsTrigger>
               <TabsTrigger className="whitespace-normal px-2 py-2 text-xs sm:text-sm" value="appearance">Aparencia</TabsTrigger>
