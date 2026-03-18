@@ -64,6 +64,8 @@ const TABLET_MAX = 1024;
 interface SettingsPreviewState {
   allowReopenCompleted: boolean;
   autosaveEnabled: boolean;
+  noteDateButtonsEnabled: boolean;
+  quickRescheduleDaysThreshold: number;
   appearance: AppearanceSettings;
   listDisplay: import('@/types').ActivityListDisplaySettings;
   savedFilters: FilterConfig[];
@@ -362,6 +364,8 @@ const Index = () => {
   const effectiveNoteTemplates = settingsPreview?.noteTemplates ?? settings.noteTemplates;
   const effectiveAllowReopenCompleted = settingsPreview?.allowReopenCompleted ?? settings.allowReopenCompleted;
   const effectiveAutosaveEnabled = settingsPreview?.autosaveEnabled ?? settings.autosaveEnabled;
+  const effectiveNoteDateButtonsEnabled = settingsPreview?.noteDateButtonsEnabled ?? settings.noteDateButtonsEnabled;
+  const effectiveQuickRescheduleDaysThreshold = settingsPreview?.quickRescheduleDaysThreshold ?? settings.quickRescheduleDaysThreshold;
 
   const handleCloseSettings = useCallback(() => {
     setSettingsPreview(null);
@@ -391,6 +395,8 @@ const Index = () => {
     saveStatus,
     hasUnsavedChanges,
     autosaveEnabled: effectiveAutosaveEnabled,
+    noteDateButtonsEnabled: effectiveNoteDateButtonsEnabled,
+    quickRescheduleDaysThreshold: effectiveQuickRescheduleDaysThreshold,
     onSave: saveAllPending,
     onUndo: undo,
     onRedo: redo,
@@ -464,6 +470,7 @@ const Index = () => {
                       <NotesSidebar
                         dates={allDatesWithNotes}
                         currentDate={currentDate}
+                        showDateButtons={effectiveNoteDateButtonsEnabled}
                         onSelectDate={handleDateChange}
                         onSearch={searchNotes}
                         onSelectSearchResult={handleSelectSearchResult}
@@ -487,6 +494,7 @@ const Index = () => {
                         saveStatus={saveStatus}
                         hasUnsavedChanges={hasUnsavedChanges}
                         autosaveEnabled={effectiveAutosaveEnabled}
+                        showDateButtons
                         onSave={saveAllPending}
                         onUndo={undo}
                         onRedo={redo}
@@ -529,6 +537,8 @@ const Index = () => {
                   sortOption={sortOption}
                   onSortChange={setSortOption}
                   allowReopenCompleted={effectiveAllowReopenCompleted}
+                  showQuickRescheduleButtons={effectiveNoteDateButtonsEnabled}
+                  quickRescheduleDaysThreshold={effectiveQuickRescheduleDaysThreshold}
                 />
               </Suspense>
             </ResizablePanel>
@@ -561,6 +571,8 @@ const Index = () => {
             noteTemplates={settings.noteTemplates}
             allowReopenCompleted={settings.allowReopenCompleted}
             autosaveEnabled={settings.autosaveEnabled}
+            noteDateButtonsEnabled={settings.noteDateButtonsEnabled}
+            quickRescheduleDaysThreshold={settings.quickRescheduleDaysThreshold}
             appearance={appearance}
             listDisplay={settings.listDisplay}
             savedFilters={settings.savedFilters}

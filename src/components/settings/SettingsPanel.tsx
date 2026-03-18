@@ -28,10 +28,14 @@ import { AppearanceSettingsTab } from './AppearanceSettings';
 import { ListDisplaySettingsTab } from './ListDisplaySettings';
 import { ActivityFormLayoutSettingsTab } from './ActivityFormLayoutSettings';
 import { NoteTemplateSettingsTab } from './NoteTemplateSettings';
+import { NoteShortcutsSettingsTab } from './NoteShortcutsSettings';
+import { isProtectedCustomField, sanitizeListDisplayForFields } from '@/lib/custom-fields';
 
 export interface SettingsPanelPreview {
   allowReopenCompleted: boolean;
   autosaveEnabled: boolean;
+  noteDateButtonsEnabled: boolean;
+  quickRescheduleDaysThreshold: number;
   appearance: AppearanceSettings;
   listDisplay: ActivityListDisplaySettings;
   savedFilters: FilterConfig[];
@@ -49,6 +53,8 @@ interface SettingsPanelProps {
   noteTemplates: NoteTemplate[];
   allowReopenCompleted: boolean;
   autosaveEnabled: boolean;
+  noteDateButtonsEnabled: boolean;
+  quickRescheduleDaysThreshold: number;
   appearance: AppearanceSettings;
   listDisplay: ActivityListDisplaySettings;
   savedFilters: FilterConfig[];
@@ -62,6 +68,8 @@ interface SettingsPanelProps {
   onUpdateGeneralSettings: (updates: {
     allowReopenCompleted?: boolean;
     autosaveEnabled?: boolean;
+    noteDateButtonsEnabled?: boolean;
+    quickRescheduleDaysThreshold?: number;
   }) => Promise<void> | void;
   onUpdateAppearance: (updates: Partial<AppearanceSettings>) => Promise<void> | void;
   onUpdateListDisplay: (updates: Partial<ActivityListDisplaySettings>) => Promise<void> | void;
@@ -152,6 +160,8 @@ export function SettingsPanel({
   noteTemplates,
   allowReopenCompleted,
   autosaveEnabled,
+  noteDateButtonsEnabled,
+  quickRescheduleDaysThreshold,
   appearance,
   listDisplay,
   savedFilters,
@@ -172,6 +182,8 @@ export function SettingsPanel({
 }: SettingsPanelProps) {
   const [draftAllowReopenCompleted, setDraftAllowReopenCompleted] = useState(allowReopenCompleted);
   const [draftAutosaveEnabled, setDraftAutosaveEnabled] = useState(autosaveEnabled);
+  const [draftNoteDateButtonsEnabled, setDraftNoteDateButtonsEnabled] = useState(noteDateButtonsEnabled);
+  const [draftQuickRescheduleDaysThreshold, setDraftQuickRescheduleDaysThreshold] = useState(quickRescheduleDaysThreshold);
   const [draftAppearance, setDraftAppearance] = useState<AppearanceSettings>(appearance);
   const [draftListDisplay, setDraftListDisplay] = useState<ActivityListDisplaySettings>(listDisplay);
   const [draftSavedFilters, setDraftSavedFilters] = useState<FilterConfig[]>(savedFilters);
@@ -194,6 +206,8 @@ export function SettingsPanel({
 
     setDraftAllowReopenCompleted(allowReopenCompleted);
     setDraftAutosaveEnabled(autosaveEnabled);
+    setDraftNoteDateButtonsEnabled(noteDateButtonsEnabled);
+    setDraftQuickRescheduleDaysThreshold(quickRescheduleDaysThreshold);
     setDraftAppearance(appearance);
     setDraftListDisplay(listDisplay);
     setDraftSavedFilters(savedFilters);
@@ -212,6 +226,8 @@ export function SettingsPanel({
     allowReopenCompleted,
     appearance,
     autosaveEnabled,
+    noteDateButtonsEnabled,
+    quickRescheduleDaysThreshold,
     customFields,
     isOpen,
     listDisplay,
@@ -225,6 +241,10 @@ export function SettingsPanel({
     () => [...draftFields].sort((a, b) => a.order - b.order),
     [draftFields]
   );
+  const sanitizedDraftListDisplay = useMemo(
+    () => sanitizeListDisplayForFields(draftListDisplay, orderedFields),
+    [draftListDisplay, orderedFields]
+  );
 
   useEffect(() => {
     if (!isOpen) {
@@ -234,8 +254,10 @@ export function SettingsPanel({
     onPreviewChange?.({
       allowReopenCompleted: draftAllowReopenCompleted,
       autosaveEnabled: draftAutosaveEnabled,
+      noteDateButtonsEnabled: draftNoteDateButtonsEnabled,
+      quickRescheduleDaysThreshold: draftQuickRescheduleDaysThreshold,
       appearance: draftAppearance,
-      listDisplay: draftListDisplay,
+      listDisplay: sanitizedDraftListDisplay,
       savedFilters: draftSavedFilters,
       savedSort: draftSavedSort,
       customFields: orderedFields,
@@ -246,7 +268,8 @@ export function SettingsPanel({
     draftAllowReopenCompleted,
     draftAppearance,
     draftAutosaveEnabled,
-    draftListDisplay,
+    draftNoteDateButtonsEnabled,
+    draftQuickRescheduleDaysThreshold,
     draftNoteTemplates,
     draftSavedFilters,
     draftSavedSort,
@@ -254,6 +277,7 @@ export function SettingsPanel({
     isOpen,
     onPreviewChange,
     orderedFields,
+    sanitizedDraftListDisplay,
   ]);
 
   const updateDraftField = (fieldId: string, updates: Partial<CustomField>) => {
@@ -301,8 +325,10 @@ export function SettingsPanel({
     return (
       draftAllowReopenCompleted !== allowReopenCompleted ||
       draftAutosaveEnabled !== autosaveEnabled ||
+      draftNoteDateButtonsEnabled !== noteDateButtonsEnabled ||
+      draftQuickRescheduleDaysThreshold !== quickRescheduleDaysThreshold ||
       shallowChanged(draftAppearance, appearance) ||
-      shallowChanged(draftListDisplay, listDisplay) ||
+      shallowChanged(sanitizedDraftListDisplay, listDisplay) ||
       shallowChanged(draftSavedFilters, savedFilters) ||
       shallowChanged(draftSavedSort, savedSort) ||
       shallowChanged(orderedFields, [...customFields].sort((a, b) => a.order - b.order)) ||
@@ -313,11 +339,14 @@ export function SettingsPanel({
     allowReopenCompleted,
     appearance,
     autosaveEnabled,
+    noteDateButtonsEnabled,
+    quickRescheduleDaysThreshold,
     customFields,
     draftAllowReopenCompleted,
     draftAppearance,
     draftAutosaveEnabled,
-    draftListDisplay,
+    draftNoteDateButtonsEnabled,
+    draftQuickRescheduleDaysThreshold,
     draftSavedFilters,
     draftSavedSort,
     draftTags,
@@ -327,6 +356,7 @@ export function SettingsPanel({
     noteTemplates,
     savedFilters,
     savedSort,
+    sanitizedDraftListDisplay,
     tags,
   ]);
 
@@ -334,21 +364,24 @@ export function SettingsPanel({
     setIsSaving(true);
 
     try {
-      if (draftAllowReopenCompleted !== allowReopenCompleted || draftAutosaveEnabled !== autosaveEnabled) {
+      if (
+        draftAllowReopenCompleted !== allowReopenCompleted ||
+        draftAutosaveEnabled !== autosaveEnabled ||
+        draftNoteDateButtonsEnabled !== noteDateButtonsEnabled ||
+        draftQuickRescheduleDaysThreshold !== quickRescheduleDaysThreshold
+      ) {
         await Promise.resolve(
           onUpdateGeneralSettings({
             allowReopenCompleted: draftAllowReopenCompleted,
             autosaveEnabled: draftAutosaveEnabled,
+            noteDateButtonsEnabled: draftNoteDateButtonsEnabled,
+            quickRescheduleDaysThreshold: draftQuickRescheduleDaysThreshold,
           })
         );
       }
 
       if (shallowChanged(draftAppearance, appearance)) {
         await Promise.resolve(onUpdateAppearance(draftAppearance));
-      }
-
-      if (shallowChanged(draftListDisplay, listDisplay)) {
-        await Promise.resolve(onUpdateListDisplay(draftListDisplay));
       }
 
       if (shallowChanged(draftSavedFilters, savedFilters)) {
@@ -367,7 +400,7 @@ export function SettingsPanel({
       const originalFieldMap = new Map(originalFields.map((field) => [field.id, field]));
 
       for (const field of originalFields) {
-        if (!orderedFields.some((item) => item.id === field.id)) {
+        if (!isProtectedCustomField(field) && !orderedFields.some((item) => item.id === field.id)) {
           await Promise.resolve(onDeleteField(field.id));
         }
       }
@@ -406,6 +439,10 @@ export function SettingsPanel({
         if (Object.keys(updates).length > 0) {
           await Promise.resolve(onUpdateField(field.id, updates));
         }
+      }
+
+      if (shallowChanged(sanitizedDraftListDisplay, listDisplay)) {
+        await Promise.resolve(onUpdateListDisplay(sanitizedDraftListDisplay));
       }
 
       const originalTagMap = new Map(tags.map((tag) => [tag.id, tag]));
@@ -458,11 +495,12 @@ export function SettingsPanel({
 
         <div className="flex-1 min-h-0 overflow-y-auto px-4 py-3">
           <Tabs defaultValue="general" className="flex min-h-full flex-col gap-3">
-            <TabsList className="grid h-auto w-full shrink-0 grid-cols-2 gap-1 sm:grid-cols-4 lg:grid-cols-7">
+            <TabsList className="grid h-auto w-full shrink-0 grid-cols-2 gap-1 sm:grid-cols-4 lg:grid-cols-8">
               <TabsTrigger className="whitespace-normal px-2 py-2 text-xs sm:text-sm" value="general">Geral</TabsTrigger>
               <TabsTrigger className="whitespace-normal px-2 py-2 text-xs sm:text-sm" value="list">Lista</TabsTrigger>
               <TabsTrigger className="whitespace-normal px-2 py-2 text-xs sm:text-sm" value="appearance">Aparencia</TabsTrigger>
               <TabsTrigger className="whitespace-normal px-2 py-2 text-xs sm:text-sm" value="notes">Notas</TabsTrigger>
+              <TabsTrigger className="whitespace-normal px-2 py-2 text-xs sm:text-sm" value="shortcuts">Atalhos</TabsTrigger>
               <TabsTrigger className="whitespace-normal px-2 py-2 text-xs sm:text-sm" value="form">Formulario</TabsTrigger>
               <TabsTrigger className="whitespace-normal px-2 py-2 text-xs sm:text-sm" value="fields">Campos</TabsTrigger>
               <TabsTrigger className="whitespace-normal px-2 py-2 text-xs sm:text-sm" value="tags">Tags</TabsTrigger>
@@ -487,14 +525,46 @@ export function SettingsPanel({
                   </div>
                   <Switch checked={draftAutosaveEnabled} onCheckedChange={setDraftAutosaveEnabled} />
                 </div>
+
+                <div className="flex items-center justify-between border-t pt-4">
+                  <div>
+                    <Label className="font-medium">Reprogramacao rapida nas notas</Label>
+                    <p className="text-sm text-muted-foreground">
+                      Mostrar os botoes Hoje, Amanha, +7 dias e S/data nas atividades
+                    </p>
+                  </div>
+                  <Switch checked={draftNoteDateButtonsEnabled} onCheckedChange={setDraftNoteDateButtonsEnabled} />
+                </div>
+
+                <div className="space-y-2 border-t pt-4">
+                  <div>
+                    <Label className="font-medium">Mostrar a quantos dias do prazo</Label>
+                    <p className="text-sm text-muted-foreground">
+                      `0` mostra so no dia do prazo e em atrasadas. Atividades sem data continuam exibindo os botoes.
+                    </p>
+                  </div>
+                  <Input
+                    type="number"
+                    min={0}
+                    step={1}
+                    value={draftQuickRescheduleDaysThreshold}
+                    onChange={(event) =>
+                      setDraftQuickRescheduleDaysThreshold(
+                        Math.max(0, Number.parseInt(event.target.value || '0', 10) || 0)
+                      )
+                    }
+                    disabled={!draftNoteDateButtonsEnabled}
+                    className="h-9 max-w-[180px]"
+                  />
+                </div>
               </div>
             </TabsContent>
 
             <TabsContent value="list" className="mt-0">
               <ListDisplaySettingsTab
-                customFields={draftFields}
+                customFields={orderedFields}
                 tags={draftTags}
-                listDisplay={draftListDisplay}
+                listDisplay={sanitizedDraftListDisplay}
                 savedFilters={draftSavedFilters}
                 savedSort={draftSavedSort}
                 onUpdateListDisplay={(updates) => setDraftListDisplay((prev) => ({ ...prev, ...updates }))}
@@ -511,9 +581,13 @@ export function SettingsPanel({
               <NoteTemplateSettingsTab templates={draftNoteTemplates} onUpdate={setDraftNoteTemplates} />
             </TabsContent>
 
+            <TabsContent value="shortcuts" className="mt-0">
+              <NoteShortcutsSettingsTab />
+            </TabsContent>
+
             <TabsContent value="form" className="mt-0">
               <ActivityFormLayoutSettingsTab
-                customFields={draftFields}
+                customFields={orderedFields}
                 layout={draftListDisplay.formLayout}
                 onUpdate={(formLayout) => setDraftListDisplay((prev) => ({ ...prev, formLayout }))}
               />
@@ -522,8 +596,13 @@ export function SettingsPanel({
             <TabsContent value="fields" className="space-y-4">
               <div className="space-y-3">
                 {orderedFields.map((field) => (
-                  <div key={field.id} className="rounded-lg border bg-muted/30 p-3 space-y-3">
-                    <div className="flex items-center gap-3">
+                  <div key={field.id} className="rounded-lg border bg-muted/20 p-2.5 space-y-2">
+                    {isProtectedCustomField(field) && (
+                      <div className="rounded-md border border-dashed px-2 py-1 text-[11px] text-muted-foreground">
+                        Campo predefinido: pode ser ocultado, mas nao removido.
+                      </div>
+                    )}
+                    <div className="flex items-center gap-2">
                       <Switch
                         checked={field.enabled}
                         onCheckedChange={(checked) => updateDraftField(field.id, { enabled: checked })}
@@ -531,24 +610,30 @@ export function SettingsPanel({
                       <Input
                         value={field.name}
                         onChange={(event) => updateDraftField(field.id, { name: event.target.value })}
-                        className="h-8 flex-1"
+                        className="h-7 flex-1"
                       />
                       <Button
                         type="button"
                         variant="ghost"
                         size="icon"
-                        className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                        className="h-7 w-7 text-muted-foreground hover:text-destructive disabled:hover:text-muted-foreground"
                         onClick={() => setDraftFields((prev) => prev.filter((item) => item.id !== field.id))}
+                        disabled={isProtectedCustomField(field)}
+                        title={isProtectedCustomField(field) ? 'Campo predefinido nao pode ser excluido' : 'Excluir campo'}
                       >
                         <Trash2 className="h-4 w-4" />
                       </Button>
                     </div>
 
-                    <div className="grid gap-3 md:grid-cols-[minmax(0,220px)_160px]">
+                    <div className="grid gap-2 md:grid-cols-[minmax(0,200px)_150px]">
                       <div className="space-y-2">
-                        <Label>Tipo</Label>
-                        <Select value={field.type} onValueChange={(value) => updateDraftField(field.id, { type: value as FieldType })}>
-                          <SelectTrigger className="h-8">
+                        <Label className="text-xs">Tipo</Label>
+                        <Select
+                          value={field.type}
+                          onValueChange={(value) => updateDraftField(field.id, { type: value as FieldType })}
+                          disabled={isProtectedCustomField(field)}
+                        >
+                          <SelectTrigger className="h-7">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
@@ -561,7 +646,7 @@ export function SettingsPanel({
                         </Select>
                       </div>
 
-                      <div className="flex items-center gap-2 pt-8">
+                      <div className="flex items-center gap-2 pt-6">
                         <Checkbox
                           id={`required-${field.id}`}
                           checked={field.required}
@@ -572,12 +657,13 @@ export function SettingsPanel({
                     </div>
 
                     {isSelectType(field.type) && (
-                      <div className="space-y-2">
-                        <Label>Opcoes</Label>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Opcoes</Label>
                         <Input
                           value={field.options?.join(', ') || ''}
                           onChange={(event) => updateDraftField(field.id, { options: parseOptions(event.target.value) })}
                           placeholder="Opcao 1, Opcao 2, Opcao 3"
+                          className="h-7"
                         />
                       </div>
                     )}

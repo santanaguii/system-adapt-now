@@ -42,6 +42,7 @@ interface NoteEditorProps {
   saveStatus: SaveStatus;
   hasUnsavedChanges: boolean;
   autosaveEnabled: boolean;
+  showDateButtons?: boolean;
   onSave: () => void;
   onUndo: () => void;
   onRedo: () => void;
@@ -67,6 +68,7 @@ export function NoteEditor({
   saveStatus,
   hasUnsavedChanges,
   autosaveEnabled,
+  showDateButtons = true,
   onSave,
   onUndo,
   onRedo,
@@ -541,26 +543,33 @@ export function NoteEditor({
       <div className="shrink-0 border-b px-4 py-3">
         <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handlePrevDay}>
-            <ChevronLeft className="h-4 w-4" />
-          </Button>
-
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button variant="ghost" className={cn('h-8 px-3 font-medium', isToday && 'text-primary')}>
-                <CalendarIcon className="mr-2 h-4 w-4" />
-                {format(currentDate, "d 'de' MMMM, yyyy", { locale: ptBR })}
+          {showDateButtons ? (
+            <>
+              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handlePrevDay}>
+                <ChevronLeft className="h-4 w-4" />
               </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-auto p-0" align="start">
-              <Calendar mode="single" selected={currentDate} onSelect={(date) => date && onDateChange(date)} locale={ptBR} />
-            </PopoverContent>
-          </Popover>
 
-          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleNextDay}>
-            <ChevronRight className="h-4 w-4" />
-          </Button>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="ghost" className={cn('h-8 px-3 font-medium', isToday && 'text-primary')}>
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {format(currentDate, "d 'de' MMMM, yyyy", { locale: ptBR })}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar mode="single" selected={currentDate} onSelect={(date) => date && onDateChange(date)} locale={ptBR} />
+                </PopoverContent>
+              </Popover>
 
+              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleNextDay}>
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </>
+          ) : (
+            <div className={cn('px-1 text-sm font-medium', isToday && 'text-primary')}>
+              {format(currentDate, "d 'de' MMMM, yyyy", { locale: ptBR })}
+            </div>
+          )}
           {isToday && <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">Hoje</span>}
         </div>
 

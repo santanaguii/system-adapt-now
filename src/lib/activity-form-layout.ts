@@ -21,12 +21,11 @@ export const defaultActivityFormLayout: ActivityFormLayoutSettings = {
     { id: 'title', contentKey: 'title', colStart: 1, rowStart: 1, colSpan: 12, rowSpan: 1 },
     { id: 'due-date', contentKey: 'dueDate', colStart: 1, rowStart: 2, colSpan: 6, rowSpan: 1 },
     { id: 'priority', contentKey: 'field:priority', colStart: 7, rowStart: 2, colSpan: 6, rowSpan: 1 },
-    { id: 'description', contentKey: 'field:description', colStart: 1, rowStart: 3, colSpan: 12, rowSpan: 1 },
-    { id: 'tags', contentKey: 'tags', colStart: 1, rowStart: 4, colSpan: 12, rowSpan: 1 },
-    { id: 'dependencies', contentKey: 'dependencies', colStart: 1, rowStart: 5, colSpan: 12, rowSpan: 1 },
-    { id: 'recurrence', contentKey: 'recurrence', colStart: 1, rowStart: 6, colSpan: 12, rowSpan: 1 },
-    { id: 'observations', contentKey: 'observations', colStart: 1, rowStart: 7, colSpan: 12, rowSpan: 1 },
-    { id: 'note-origin', contentKey: 'noteOrigin', colStart: 1, rowStart: 8, colSpan: 12, rowSpan: 1 },
+    { id: 'tags', contentKey: 'tags', colStart: 1, rowStart: 3, colSpan: 12, rowSpan: 1 },
+    { id: 'dependencies', contentKey: 'dependencies', colStart: 1, rowStart: 4, colSpan: 12, rowSpan: 1 },
+    { id: 'recurrence', contentKey: 'recurrence', colStart: 1, rowStart: 5, colSpan: 12, rowSpan: 1 },
+    { id: 'observations', contentKey: 'observations', colStart: 1, rowStart: 6, colSpan: 12, rowSpan: 1 },
+    { id: 'note-origin', contentKey: 'noteOrigin', colStart: 1, rowStart: 7, colSpan: 12, rowSpan: 1 },
   ],
 };
 

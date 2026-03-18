@@ -16,6 +16,7 @@ interface NotesSidebarProps {
   onSelectDate: (date: Date) => void;
   onSearch: (query: string) => NoteSearchResult[];
   onSelectSearchResult?: (result: NoteSearchResult) => void;
+  showDateButtons?: boolean;
 }
 
 function renderHighlightedSnippet(snippet: string, terms: string[]) {
@@ -40,7 +41,14 @@ function renderHighlightedSnippet(snippet: string, terms: string[]) {
   });
 }
 
-export function NotesSidebar({ dates, currentDate, onSelectDate, onSearch, onSelectSearchResult }: NotesSidebarProps) {
+export function NotesSidebar({
+  dates,
+  currentDate,
+  onSelectDate,
+  onSearch,
+  onSelectSearchResult,
+  showDateButtons = true,
+}: NotesSidebarProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<NoteSearchResult[]>([]);
   const currentDateStr = format(currentDate, 'yyyy-MM-dd');
@@ -79,23 +87,25 @@ export function NotesSidebar({ dates, currentDate, onSelectDate, onSearch, onSel
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b">
         <h2 className="text-lg font-semibold">Notas</h2>
-        <div className="flex items-center gap-1">
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-8 w-8" title="Selecionar data">
-                <Calendar className="h-4 w-4" />
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-auto p-0" align="end">
-              <CalendarComponent
-                mode="single"
-                selected={currentDate}
-                onSelect={(date) => date && onSelectDate(date)}
-                locale={ptBR}
-              />
-            </PopoverContent>
-          </Popover>
-        </div>
+        {showDateButtons && (
+          <div className="flex items-center gap-1">
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-8 w-8" title="Selecionar data">
+                  <Calendar className="h-4 w-4" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="end">
+                <CalendarComponent
+                  mode="single"
+                  selected={currentDate}
+                  onSelect={(date) => date && onSelectDate(date)}
+                  locale={ptBR}
+                />
+              </PopoverContent>
+            </Popover>
+          </div>
+        )}
       </div>
 
       {/* Search */}

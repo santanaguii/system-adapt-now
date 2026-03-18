@@ -182,6 +182,8 @@ export interface AppSettings {
   defaultSort: SortOption;
   activityCreationMode: ActivityCreationMode;
   autosaveEnabled: boolean;
+  noteDateButtonsEnabled: boolean;
+  quickRescheduleDaysThreshold: number;
   listDisplay: ActivityListDisplaySettings;
   savedFilters: FilterConfig[];
   savedSort: SortConfig;

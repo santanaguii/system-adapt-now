@@ -2,8 +2,15 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { AppSettings, CustomField, Tag, SortOption, ActivityCreationMode, ActivityListDisplaySettings, FilterConfig, SortConfig, NoteTemplate } from '@/types';
 import { useAuthContext } from '@/contexts/AuthContext';
-import { defaultListDisplay, defaultSortConfig, normalizeListDisplaySettings, upsertUserSettings } from '@/lib/user-settings';
+import {
+  defaultListDisplay,
+  defaultSortConfig,
+  normalizeListDisplaySettings,
+  normalizeQuickRescheduleDaysThreshold,
+  upsertUserSettings,
+} from '@/lib/user-settings';
 import { defaultNoteTemplates, readNoteTemplates, writeNoteTemplates } from '@/lib/note-templates';
+import { dedupeCustomFields, sanitizeListDisplayForFields } from '@/lib/custom-fields';
 
 // Type definitions for external Supabase tables
 interface TagRow {
@@ -35,6 +42,8 @@ interface UserSettingsRow {
   default_sort: string;
   activity_creation_mode: string;
   autosave_enabled: boolean;
+  note_date_buttons_enabled?: boolean;
+  quick_reschedule_days_threshold?: number | null;
   list_display?: ActivityListDisplaySettings;
   saved_filters?: FilterConfig[];
   saved_sort?: SortConfig;
@@ -48,6 +57,8 @@ const defaultSettings: AppSettings = {
   defaultSort: 'manual',
   activityCreationMode: 'detailed',
   autosaveEnabled: true,
+  noteDateButtonsEnabled: true,
+  quickRescheduleDaysThreshold: 0,
   listDisplay: defaultListDisplay,
   savedFilters: [],
   savedSort: defaultSortConfig,
@@ -63,6 +74,8 @@ export function useSettings() {
     defaultSort: SortOption;
     activityCreationMode: ActivityCreationMode;
     autosaveEnabled: boolean;
+    noteDateButtonsEnabled: boolean;
+    quickRescheduleDaysThreshold: number;
     listDisplay: ActivityListDisplaySettings;
     savedFilters: FilterConfig[];
     savedSort: SortConfig;
@@ -71,6 +84,8 @@ export function useSettings() {
     defaultSort: 'manual',
     activityCreationMode: 'detailed',
     autosaveEnabled: true,
+    noteDateButtonsEnabled: true,
+    quickRescheduleDaysThreshold: 0,
     listDisplay: defaultListDisplay,
     savedFilters: [],
     savedSort: defaultSortConfig,
@@ -88,6 +103,8 @@ export function useSettings() {
         defaultSort: 'manual',
         activityCreationMode: 'detailed',
         autosaveEnabled: true,
+        noteDateButtonsEnabled: true,
+        quickRescheduleDaysThreshold: 0,
         listDisplay: defaultListDisplay,
         savedFilters: [],
         savedSort: defaultSortConfig,
@@ -122,7 +139,7 @@ export function useSettings() {
           .order('sort_order') as { data: CustomFieldRow[] | null; error: unknown };
 
         if (!fieldsError && fieldsData) {
-          setCustomFields(fieldsData.map(f => ({
+          setCustomFields(dedupeCustomFields(fieldsData.map(f => ({
             id: f.id,
             key: f.key,
             name: f.name,
@@ -134,7 +151,7 @@ export function useSettings() {
             validation: f.validation as CustomField['validation'],
             display: f.display as CustomField['display'],
             order: f.sort_order,
-          })));
+          }))));
         }
 
         // Load general settings
@@ -150,6 +167,8 @@ export function useSettings() {
             defaultSort: settingsData.default_sort as SortOption,
             activityCreationMode: 'detailed',
             autosaveEnabled: settingsData.autosave_enabled ?? true,
+            noteDateButtonsEnabled: settingsData.note_date_buttons_enabled ?? true,
+            quickRescheduleDaysThreshold: normalizeQuickRescheduleDaysThreshold(settingsData.quick_reschedule_days_threshold),
             listDisplay: normalizeListDisplaySettings(settingsData.list_display as Partial<ActivityListDisplaySettings> | null),
             savedFilters: settingsData.saved_filters ?? [],
             savedSort: settingsData.saved_sort ?? defaultSortConfig,
@@ -176,7 +195,9 @@ export function useSettings() {
     defaultSort: generalSettings.defaultSort,
     activityCreationMode: generalSettings.activityCreationMode,
     autosaveEnabled: generalSettings.autosaveEnabled,
-    listDisplay: generalSettings.listDisplay,
+    noteDateButtonsEnabled: generalSettings.noteDateButtonsEnabled,
+    quickRescheduleDaysThreshold: generalSettings.quickRescheduleDaysThreshold,
+    listDisplay: sanitizeListDisplayForFields(generalSettings.listDisplay, customFields),
     savedFilters: generalSettings.savedFilters,
     savedSort: generalSettings.savedSort,
   }), [customFields, tags, noteTemplates, generalSettings]);
@@ -391,19 +412,28 @@ export function useSettings() {
   }, [user, customFields]);
 
   // General settings operations
-  const updateGeneralSettings = useCallback(async (updates: Partial<Pick<AppSettings, 'allowReopenCompleted' | 'defaultSort' | 'activityCreationMode' | 'autosaveEnabled'>>) => {
+  const updateGeneralSettings = useCallback(async (updates: Partial<Pick<AppSettings, 'allowReopenCompleted' | 'defaultSort' | 'activityCreationMode' | 'autosaveEnabled' | 'noteDateButtonsEnabled' | 'quickRescheduleDaysThreshold'>>) => {
     if (!user) return;
 
+    const normalizedUpdates = updates.quickRescheduleDaysThreshold === undefined
+      ? updates
+      : {
+          ...updates,
+          quickRescheduleDaysThreshold: normalizeQuickRescheduleDaysThreshold(updates.quickRescheduleDaysThreshold),
+        };
+
     // Update local state (optimistic)
-    setGeneralSettings(prev => ({ ...prev, ...updates }));
+    setGeneralSettings(prev => ({ ...prev, ...normalizedUpdates }));
 
     try {
       // Convert to DB format
       const dbUpdates: Partial<UserSettingsRow> = {};
-      if (updates.allowReopenCompleted !== undefined) dbUpdates.allow_reopen_completed = updates.allowReopenCompleted;
-      if (updates.defaultSort !== undefined) dbUpdates.default_sort = updates.defaultSort;
-      if (updates.activityCreationMode !== undefined) dbUpdates.activity_creation_mode = updates.activityCreationMode;
-      if (updates.autosaveEnabled !== undefined) dbUpdates.autosave_enabled = updates.autosaveEnabled;
+      if (normalizedUpdates.allowReopenCompleted !== undefined) dbUpdates.allow_reopen_completed = normalizedUpdates.allowReopenCompleted;
+      if (normalizedUpdates.defaultSort !== undefined) dbUpdates.default_sort = normalizedUpdates.defaultSort;
+      if (normalizedUpdates.activityCreationMode !== undefined) dbUpdates.activity_creation_mode = normalizedUpdates.activityCreationMode;
+      if (normalizedUpdates.autosaveEnabled !== undefined) dbUpdates.autosave_enabled = normalizedUpdates.autosaveEnabled;
+      if (normalizedUpdates.noteDateButtonsEnabled !== undefined) dbUpdates.note_date_buttons_enabled = normalizedUpdates.noteDateButtonsEnabled;
+      if (normalizedUpdates.quickRescheduleDaysThreshold !== undefined) dbUpdates.quick_reschedule_days_threshold = normalizedUpdates.quickRescheduleDaysThreshold;
 
       const { error } = await upsertUserSettings(user.id, dbUpdates);
 
@@ -426,7 +456,10 @@ export function useSettings() {
     }));
 
     try {
-      const newListDisplay = normalizeListDisplaySettings({ ...generalSettings.listDisplay, ...updates });
+      const newListDisplay = sanitizeListDisplayForFields(
+        normalizeListDisplaySettings({ ...generalSettings.listDisplay, ...updates }),
+        customFields
+      );
       const { error } = await upsertUserSettings(user.id, { list_display: newListDisplay });
 
       if (error) {
@@ -435,7 +468,7 @@ export function useSettings() {
     } catch (error) {
       console.error('Error updating list display settings:', error);
     }
-  }, [user, generalSettings.listDisplay]);
+  }, [user, generalSettings.listDisplay, customFields]);
 
   // Saved filters operations
   const updateSavedFilters = useCallback(async (filters: FilterConfig[]) => {

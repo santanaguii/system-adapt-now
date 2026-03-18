@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Plus, Trash2 } from 'lucide-react';
+import { isListEligibleCustomField, isProtectedCustomField } from '@/lib/custom-fields';
 
 interface ListDisplaySettingsProps {
   customFields: CustomField[];
@@ -65,6 +66,10 @@ export function ListDisplaySettingsTab({
   const [newFilter, setNewFilter] = useState<Partial<FilterConfig>>({});
 
   const enabledFields = customFields.filter((field) => field.enabled);
+  const listEligibleFields = enabledFields.filter(isListEligibleCustomField);
+  const additionalListFields = listEligibleFields.filter((field) => !isProtectedCustomField(field));
+  const dueDateFieldEnabled = listEligibleFields.some((field) => field.key === 'dueDate');
+  const priorityFieldEnabled = listEligibleFields.some((field) => field.key === 'priority');
 
   const handleToggleFieldVisibility = (fieldId: string, visible: boolean) => {
     const currentVisible = listDisplay.visibleFieldIds || [];
@@ -109,20 +114,24 @@ export function ListDisplaySettingsTab({
       checked: listDisplay.showTags,
       onCheckedChange: (checked: boolean) => onUpdateListDisplay({ showTags: checked }),
     },
-    {
-      id: 'show-due-date',
-      label: 'Mostrar data de prazo',
-      description: 'Exibir prazo quando definido',
-      checked: listDisplay.showDueDate,
-      onCheckedChange: (checked: boolean) => onUpdateListDisplay({ showDueDate: checked }),
-    },
-    {
-      id: 'show-priority',
-      label: 'Mostrar prioridade',
-      description: 'Exibir indicador de prioridade',
-      checked: listDisplay.showPriority,
-      onCheckedChange: (checked: boolean) => onUpdateListDisplay({ showPriority: checked }),
-    },
+    ...(dueDateFieldEnabled
+      ? [{
+          id: 'show-due-date',
+          label: 'Mostrar data de prazo',
+          description: 'Exibir prazo quando definido',
+          checked: listDisplay.showDueDate,
+          onCheckedChange: (checked: boolean) => onUpdateListDisplay({ showDueDate: checked }),
+        }]
+      : []),
+    ...(priorityFieldEnabled
+      ? [{
+          id: 'show-priority',
+          label: 'Mostrar prioridade',
+          description: 'Exibir indicador de prioridade',
+          checked: listDisplay.showPriority,
+          onCheckedChange: (checked: boolean) => onUpdateListDisplay({ showPriority: checked }),
+        }]
+      : []),
   ];
 
   return (
@@ -145,11 +154,11 @@ export function ListDisplaySettingsTab({
           ))}
         </div>
 
-        {enabledFields.length > 0 && (
+        {additionalListFields.length > 0 && (
           <div className="space-y-3 pt-2">
-            <Label className="text-sm font-medium">Campos personalizados visiveis</Label>
+            <Label className="text-sm font-medium">Campos adicionais visiveis</Label>
             <div className="space-y-2">
-              {enabledFields.map((field) => (
+              {additionalListFields.map((field) => (
                 <div key={field.id} className="flex items-center justify-between py-2">
                   <div>
                     <Label className="font-medium">{field.name}</Label>

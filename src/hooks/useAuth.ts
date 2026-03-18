@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import type { User as SupabaseUser } from '@supabase/supabase-js';
 import { buildDefaultUserSettings } from '@/lib/user-settings';
@@ -70,6 +70,8 @@ const DEFAULT_CUSTOM_FIELDS = [
   },
 ];
 
+const ACTIVE_DEFAULT_CUSTOM_FIELDS = DEFAULT_CUSTOM_FIELDS.filter((field) => field.key !== 'description');
+
 // Type definitions for external Supabase tables
 interface Profile {
   id: string;
@@ -105,6 +107,97 @@ interface CustomFieldRow {
 export function useAuth() {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const ensuredUserIdsRef = useRef(new Set<string>());
+  const ensureDefaultDataPromisesRef = useRef(new Map<string, Promise<void>>());
+
+  const ensureDefaultData = useCallback(async (userId: string) => {
+    if (ensuredUserIdsRef.current.has(userId)) {
+      return;
+    }
+
+    const existingPromise = ensureDefaultDataPromisesRef.current.get(userId);
+    if (existingPromise) {
+      await existingPromise;
+      return;
+    }
+
+    const promise = (async () => {
+      try {
+        const [
+          { data: existingTags, error: tagsError },
+          { data: existingFields, error: fieldsError },
+          { data: existingSettings, error: settingsError },
+        ] = await Promise.all([
+          supabase
+            .from('tags' as never)
+            .select('name')
+            .eq('user_id', userId) as Promise<{ data: Pick<TagRow, 'name'>[] | null; error: unknown }>,
+          supabase
+            .from('custom_fields' as never)
+            .select('key')
+            .eq('user_id', userId) as Promise<{ data: Pick<CustomFieldRow, 'key'>[] | null; error: unknown }>,
+          supabase
+            .from('user_settings' as never)
+            .select('user_id')
+            .eq('user_id', userId)
+            .maybeSingle() as Promise<{ data: Pick<{ user_id: string }, 'user_id'> | null; error: unknown }>,
+        ]);
+
+        if (tagsError) {
+          console.error('Error checking default tags:', tagsError);
+        } else if (!existingTags || existingTags.length === 0) {
+          const tagsToInsert = DEFAULT_TAGS.map((tag) => ({
+            user_id: userId,
+            name: tag.name,
+            color: tag.color,
+          }));
+          const { error } = await supabase.from('tags' as never).insert(tagsToInsert as never);
+          if (error) {
+            console.error('Error creating default tags:', error);
+          }
+        }
+
+        if (fieldsError) {
+          console.error('Error checking default custom fields:', fieldsError);
+        } else {
+          const existingKeys = new Set((existingFields || []).map((field) => field.key));
+          const fieldsToInsert = ACTIVE_DEFAULT_CUSTOM_FIELDS
+            .filter((field) => !existingKeys.has(field.key))
+            .map((field) => ({
+              user_id: userId,
+              ...field,
+            }));
+
+          if (fieldsToInsert.length > 0) {
+            const { error } = await supabase.from('custom_fields' as never).insert(fieldsToInsert as never);
+            if (error) {
+              console.error('Error creating default custom fields:', error);
+            }
+          }
+        }
+
+        if (settingsError) {
+          console.error('Error checking user settings:', settingsError);
+        } else if (!existingSettings) {
+          const { error } = await supabase
+            .from('user_settings' as never)
+            .insert(buildDefaultUserSettings(userId) as never);
+          if (error) {
+            console.error('Error creating default user settings:', error);
+          }
+        }
+
+        ensuredUserIdsRef.current.add(userId);
+      } catch (error) {
+        console.error('Error ensuring default data:', error);
+      } finally {
+        ensureDefaultDataPromisesRef.current.delete(userId);
+      }
+    })();
+
+    ensureDefaultDataPromisesRef.current.set(userId, promise);
+    await promise;
+  }, []);
 
   // Load user profile from database
   const loadUserProfile = useCallback(async (supabaseUser: SupabaseUser) => {
@@ -121,6 +214,7 @@ export function useAuth() {
       }
 
       if (profile) {
+        await ensureDefaultData(supabaseUser.id);
         return {
           id: supabaseUser.id,
           username: profile.username,
@@ -132,7 +226,7 @@ export function useAuth() {
       console.error('Error loading profile:', error);
       return null;
     }
-  }, []);
+  }, [ensureDefaultData]);
 
   // Initialize auth state
   useEffect(() => {
@@ -223,33 +317,6 @@ export function useAuth() {
     };
   }, [loadUserProfile]);
 
-  // Create default data for new user
-  const createDefaultData = useCallback(async (userId: string) => {
-    try {
-      // Create default tags
-      const tagsToInsert = DEFAULT_TAGS.map(tag => ({
-        user_id: userId,
-        name: tag.name,
-        color: tag.color,
-      }));
-      await supabase.from('tags' as never).insert(tagsToInsert as never);
-
-      // Create default custom fields
-      const fieldsToInsert = DEFAULT_CUSTOM_FIELDS.map(field => ({
-        user_id: userId,
-        ...field,
-      }));
-      await supabase.from('custom_fields' as never).insert(fieldsToInsert as never);
-
-      // Create default settings
-      await supabase.from('user_settings' as never).insert(
-        buildDefaultUserSettings(userId) as never
-      );
-    } catch (error) {
-      console.error('Error creating default data:', error);
-    }
-  }, []);
-
   const signUp = useCallback(async (
     username: string, 
     password: string,
@@ -328,7 +395,7 @@ export function useAuth() {
       }
 
       // Create default data (tags, custom fields, settings)
-      await createDefaultData(authData.user.id);
+      await ensureDefaultData(authData.user.id);
 
       // Set user state
       setUser({
@@ -342,7 +409,7 @@ export function useAuth() {
       console.error('SignUp error:', error);
       return { success: false, error: 'Erro ao criar conta' };
     }
-  }, [createDefaultData]);
+  }, [ensureDefaultData]);
 
   const signIn = useCallback(async (username: string, password: string): Promise<{ success: boolean; error?: string }> => {
     try {

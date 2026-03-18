@@ -6,7 +6,7 @@ import type {
   JsonObject,
   JsonValue,
 } from '@/types';
-import { formatDateKey, parseDateKey } from '@/lib/date';
+import { formatDateKey, normalizeDateKey, parseDateKey } from '@/lib/date';
 
 export const ACTIVITY_META = {
   bucket: 'system_bucket',
@@ -55,7 +55,7 @@ export function getActivityBucket(activity: Activity): ActivityBucket {
 }
 
 export function getScheduledDate(activity: Activity) {
-  return getMetaString(activity, ACTIVITY_META.scheduledDate) || null;
+  return normalizeDateKey(getMetaString(activity, ACTIVITY_META.scheduledDate));
 }
 
 export function getProjectName(activity: Activity) {
@@ -275,7 +275,7 @@ export function createMetaPatch(patch: Record<string, JsonValue>) {
 }
 
 export function getActivityDateScore(activity: Activity, referenceDate: string) {
-  const dueDate = typeof activity.customFields.dueDate === 'string' ? activity.customFields.dueDate : null;
+  const dueDate = typeof activity.customFields.dueDate === 'string' ? normalizeDateKey(activity.customFields.dueDate) : null;
   const scheduledDate = getScheduledDate(activity);
   const relevantDate = dueDate || scheduledDate;
 
@@ -292,7 +292,7 @@ export function isOverdueActivity(activity: Activity, referenceDate: string) {
 }
 
 export function isDueToday(activity: Activity, referenceDate: string) {
-  const dueDate = typeof activity.customFields.dueDate === 'string' ? activity.customFields.dueDate : null;
+  const dueDate = typeof activity.customFields.dueDate === 'string' ? normalizeDateKey(activity.customFields.dueDate) : null;
   const scheduledDate = getScheduledDate(activity);
   return dueDate === referenceDate || scheduledDate === referenceDate || getActivityBucket(activity) === 'today';
 }

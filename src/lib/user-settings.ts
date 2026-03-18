@@ -16,6 +16,21 @@ export const defaultSortConfig: SortConfig = {
   direction: 'asc',
 };
 
+export function normalizeQuickRescheduleDaysThreshold(value: unknown): number {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return Math.max(0, Math.floor(value));
+  }
+
+  if (typeof value === 'string') {
+    const parsedValue = Number.parseInt(value, 10);
+    if (Number.isFinite(parsedValue)) {
+      return Math.max(0, parsedValue);
+    }
+  }
+
+  return 0;
+}
+
 export function normalizeListDisplaySettings(listDisplay: Partial<ActivityListDisplaySettings> | null | undefined): ActivityListDisplaySettings {
   return {
     showTags: listDisplay?.showTags ?? defaultListDisplay.showTags,
@@ -33,6 +48,8 @@ export function buildDefaultUserSettings(userId: string): TablesInsert<'user_set
     default_sort: 'manual',
     activity_creation_mode: 'detailed',
     autosave_enabled: true,
+    note_date_buttons_enabled: true,
+    quick_reschedule_days_threshold: 0,
     list_display: defaultListDisplay,
     saved_filters: [],
     saved_sort: defaultSortConfig,

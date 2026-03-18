@@ -28,6 +28,7 @@ import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { CalendarIcon, Link2, Star, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { formatDateKey, normalizeDateKey, parseDateKey } from '@/lib/date';
 import { ActivityDependencyField } from './ActivityDependencyField';
 import { ActivityFormLayoutBlocks } from './ActivityFormLayoutBlocks';
 import { getNextFormLayoutRow } from '@/lib/activity-form-layout';
@@ -223,6 +224,7 @@ export function ActivityDetail({
 
   const renderField = (field: CustomField) => {
     const value = getFieldValue(field);
+    const normalizedDateValue = field.type === 'date' && typeof value === 'string' ? normalizeDateKey(value) : null;
 
     if (isReadOnly) {
       if (value === null || value === undefined || value === '') {
@@ -231,8 +233,8 @@ export function ActivityDetail({
       if (field.type === 'boolean') {
         return <div className="text-sm text-muted-foreground">{value ? 'Sim' : 'Nao'}</div>;
       }
-      if (field.type === 'date' && typeof value === 'string') {
-        return <div className="text-sm text-muted-foreground">{format(new Date(value), 'PPP', { locale: ptBR })}</div>;
+      if (field.type === 'date' && normalizedDateValue) {
+        return <div className="text-sm text-muted-foreground">{format(parseDateKey(normalizedDateValue), 'PPP', { locale: ptBR })}</div>;
       }
       if (field.type === 'datetime' && typeof value === 'string') {
         return <div className="text-sm text-muted-foreground">{format(new Date(value), 'PPP HH:mm', { locale: ptBR })}</div>;
@@ -256,14 +258,14 @@ export function ActivityDetail({
                 className={cn('w-full justify-start text-left font-normal', !value && 'text-muted-foreground')}
               >
                 <CalendarIcon className="mr-2 h-4 w-4" />
-                {typeof value === 'string' ? format(new Date(value), 'PPP', { locale: ptBR }) : 'Selecionar data'}
+                {normalizedDateValue ? format(parseDateKey(normalizedDateValue), 'PPP', { locale: ptBR }) : 'Selecionar data'}
               </Button>
             </PopoverTrigger>
             <PopoverContent className="w-auto p-0" align="start">
               <Calendar
                 mode="single"
-                selected={typeof value === 'string' ? new Date(value) : undefined}
-                onSelect={(date) => setFieldValue(field, date?.toISOString() || null)}
+                selected={normalizedDateValue ? parseDateKey(normalizedDateValue) : undefined}
+                onSelect={(date) => setFieldValue(field, date ? formatDateKey(date) : null)}
                 locale={ptBR}
               />
             </PopoverContent>

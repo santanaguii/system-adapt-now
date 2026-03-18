@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { ACTIVITY_META, getLinkedNoteDates } from '@/lib/activity-meta';
+import { normalizeDateKey, parseDateKey } from '@/lib/date';
 
 interface ActivityItemProps {
   activity: Activity;
@@ -98,7 +99,7 @@ export function ActivityItem({
   };
 
   const activityTags = tags.filter((tag) => activity.tags.includes(tag.id));
-  const dueDate = typeof activity.customFields.dueDate === 'string' ? activity.customFields.dueDate : null;
+  const dueDate = typeof activity.customFields.dueDate === 'string' ? normalizeDateKey(activity.customFields.dueDate) : null;
   const priority = typeof activity.customFields.priority === 'string' ? activity.customFields.priority : null;
   const linkedNotes = getLinkedNoteDates(activity);
   const isFavorite = activity.customFields[ACTIVITY_META.favorite] === true;
@@ -181,7 +182,7 @@ export function ActivityItem({
                 {listDisplay.showDueDate && dueDate && (
                   <span className="flex items-center gap-1">
                     <Calendar className="h-3 w-3" />
-                    {format(new Date(dueDate), 'd MMM', { locale: ptBR })}
+                    {format(parseDateKey(dueDate), 'd MMM', { locale: ptBR })}
                   </span>
                 )}
 
@@ -207,7 +208,8 @@ export function ActivityItem({
 
                   let displayValue = String(value);
                   if (field.type === 'date' && typeof value === 'string') {
-                    displayValue = format(new Date(value), 'd MMM', { locale: ptBR });
+                    const normalizedValue = normalizeDateKey(value);
+                    displayValue = normalizedValue ? format(parseDateKey(normalizedValue), 'd MMM', { locale: ptBR }) : value;
                   } else if (field.type === 'boolean') {
                     displayValue = value ? 'Sim' : 'Não';
                   } else if (field.type === 'currency' && typeof value === 'number') {

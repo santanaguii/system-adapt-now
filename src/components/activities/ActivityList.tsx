@@ -57,7 +57,7 @@ import {
   getScheduledDate,
   shouldShowInToday,
 } from '@/lib/activity-meta';
-import { addDaysToDateKey, endOfMonthDateKey, getDateKeyInTimeZone } from '@/lib/date';
+import { addDaysToDateKey, endOfMonthDateKey, getDateKeyInTimeZone, normalizeDateKey } from '@/lib/date';
 
 const ActivityDetail = lazy(() =>
   import('./ActivityDetail').then((module) => ({ default: module.ActivityDetail }))
@@ -85,6 +85,8 @@ interface ActivityListProps {
   sortOption: SortOption;
   onSortChange: (sort: SortOption) => void;
   allowReopenCompleted: boolean;
+  showQuickRescheduleButtons?: boolean;
+  quickRescheduleDaysThreshold?: number;
 }
 
 interface SelectedActivityState {
@@ -144,7 +146,7 @@ function SortableActivityItem({
 }
 
 function getRelevantDate(activity: Activity) {
-  const dueDate = typeof activity.customFields.dueDate === 'string' ? activity.customFields.dueDate : null;
+  const dueDate = typeof activity.customFields.dueDate === 'string' ? normalizeDateKey(activity.customFields.dueDate) : null;
   return dueDate || getScheduledDate(activity);
 }
 
@@ -164,6 +166,8 @@ export function ActivityList({
   sortOption,
   onSortChange,
   allowReopenCompleted,
+  showQuickRescheduleButtons = true,
+  quickRescheduleDaysThreshold = 0,
 }: ActivityListProps) {
   const [panelMode, setPanelMode] = useState<'list' | 'schedule'>('list');
   const [newActivityTitle, setNewActivityTitle] = useState('');
@@ -449,10 +453,18 @@ export function ActivityList({
     </>
   );
 
-  const shouldShowQuickDateActions = (activity: Activity) => {
+  const shouldShowQuickActions = useCallback((activity: Activity) => {
+    if (!showQuickRescheduleButtons) {
+      return false;
+    }
+
     const relevantDate = getRelevantDate(activity);
-    return !relevantDate || relevantDate <= todayKey;
-  };
+    if (!relevantDate) {
+      return true;
+    }
+
+    return relevantDate <= addDaysToDateKey(todayKey, Math.max(0, quickRescheduleDaysThreshold));
+  }, [quickRescheduleDaysThreshold, showQuickRescheduleButtons, todayKey]);
 
   const syncDependencies = (currentActivityId: string, previousCustomFields: Activity['customFields'], nextCustomFields: Activity['customFields']) => {
     const relatedUpdates = buildDependencySyncUpdates({
@@ -546,7 +558,7 @@ export function ActivityList({
           onDelete={setDeleteConfirm}
           onDoubleClick={handleOpenActivityDetail}
           allowReopen={allowReopenCompleted || isCompleting}
-          quickActions={shouldShowQuickDateActions(activity) ? quickActions(activity) : undefined}
+          quickActions={shouldShowQuickActions(activity) ? quickActions(activity) : undefined}
           completionState={isCompleting ? 'transitioning' : 'idle'}
         />
       );
@@ -564,7 +576,7 @@ export function ActivityList({
         onDelete={setDeleteConfirm}
         onDoubleClick={handleOpenActivityDetail}
         allowReopen={allowReopenCompleted || isCompleting}
-        quickActions={shouldShowQuickDateActions(activity) ? quickActions(activity) : undefined}
+        quickActions={shouldShowQuickActions(activity) ? quickActions(activity) : undefined}
         completionState={isCompleting ? 'transitioning' : 'idle'}
       />
     );

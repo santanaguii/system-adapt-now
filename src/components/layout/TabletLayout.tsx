@@ -31,6 +31,8 @@ interface TabletLayoutProps {
   saveStatus: SaveStatus;
   hasUnsavedChanges: boolean;
   autosaveEnabled: boolean;
+  noteDateButtonsEnabled: boolean;
+  quickRescheduleDaysThreshold: number;
   onSave: () => void;
   onUndo: () => void;
   onRedo: () => void;
@@ -77,6 +79,8 @@ export function TabletLayout({
   saveStatus,
   hasUnsavedChanges,
   autosaveEnabled,
+  noteDateButtonsEnabled,
+  quickRescheduleDaysThreshold,
   onSave,
   onUndo,
   onRedo,
@@ -119,6 +123,7 @@ export function TabletLayout({
               <NotesSidebar
                 dates={allDatesWithNotes}
                 currentDate={currentDate}
+                showDateButtons
                 onSelectDate={(date) => {
                   onDateChange(date);
                   setSidebarOpen(false);
@@ -166,6 +171,7 @@ export function TabletLayout({
                 saveStatus={saveStatus}
                 hasUnsavedChanges={hasUnsavedChanges}
                 autosaveEnabled={autosaveEnabled}
+                showDateButtons
                 onSave={onSave}
                 onUndo={onUndo}
                 onRedo={onRedo}
@@ -202,6 +208,8 @@ export function TabletLayout({
               sortOption={sortOption}
               onSortChange={onSortChange}
               allowReopenCompleted={allowReopenCompleted}
+              showQuickRescheduleButtons={noteDateButtonsEnabled}
+              quickRescheduleDaysThreshold={quickRescheduleDaysThreshold}
             />
           </ResizablePanel>
         </ResizablePanelGroup>

@@ -10,7 +10,7 @@ import {
   getRecurrence,
   nextRecurrenceDate,
 } from '@/lib/activity-meta';
-import { getDateKeyInTimeZone } from '@/lib/date';
+import { getDateKeyInTimeZone, normalizeDateKey } from '@/lib/date';
 
 interface ActivityRow {
   id: string;
@@ -444,10 +444,10 @@ export function useActivities(sortOption: SortOption = 'manual', customFields: C
     if (completed) {
       const recurrence = getRecurrence(activity);
       const recurrenceBaseDate = typeof activity.customFields.dueDate === 'string'
-        ? activity.customFields.dueDate as string
+        ? normalizeDateKey(activity.customFields.dueDate) ?? getDateKeyInTimeZone()
         : typeof activity.customFields[ACTIVITY_META.scheduledDate] === 'string'
-          ? activity.customFields[ACTIVITY_META.scheduledDate] as string
-        : getDateKeyInTimeZone();
+          ? normalizeDateKey(activity.customFields[ACTIVITY_META.scheduledDate] as string) ?? getDateKeyInTimeZone()
+          : getDateKeyInTimeZone();
 
       if (recurrence) {
         const nextDate = nextRecurrenceDate(recurrenceBaseDate, recurrence);
@@ -500,21 +500,21 @@ export function useActivities(sortOption: SortOption = 'manual', customFields: C
     switch (sort) {
       case 'dueDate_asc':
         return sorted.sort((a, b) => {
-          const dateA = typeof a.customFields.dueDate === 'string' ? a.customFields.dueDate : null;
-          const dateB = typeof b.customFields.dueDate === 'string' ? b.customFields.dueDate : null;
+          const dateA = typeof a.customFields.dueDate === 'string' ? normalizeDateKey(a.customFields.dueDate) : null;
+          const dateB = typeof b.customFields.dueDate === 'string' ? normalizeDateKey(b.customFields.dueDate) : null;
           if (!dateA && !dateB) return 0;
           if (!dateA) return 1;
           if (!dateB) return -1;
-          return new Date(dateA).getTime() - new Date(dateB).getTime();
+          return dateA.localeCompare(dateB);
         });
       case 'dueDate_desc':
         return sorted.sort((a, b) => {
-          const dateA = typeof a.customFields.dueDate === 'string' ? a.customFields.dueDate : null;
-          const dateB = typeof b.customFields.dueDate === 'string' ? b.customFields.dueDate : null;
+          const dateA = typeof a.customFields.dueDate === 'string' ? normalizeDateKey(a.customFields.dueDate) : null;
+          const dateB = typeof b.customFields.dueDate === 'string' ? normalizeDateKey(b.customFields.dueDate) : null;
           if (!dateA && !dateB) return 0;
           if (!dateA) return 1;
           if (!dateB) return -1;
-          return new Date(dateB).getTime() - new Date(dateA).getTime();
+          return dateB.localeCompare(dateA);
         });
       case 'priority_asc':
         return sorted.sort(

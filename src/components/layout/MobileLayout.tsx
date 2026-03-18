@@ -29,6 +29,8 @@ interface MobileLayoutProps {
   saveStatus: SaveStatus;
   hasUnsavedChanges: boolean;
   autosaveEnabled: boolean;
+  noteDateButtonsEnabled: boolean;
+  quickRescheduleDaysThreshold: number;
   onSave: () => void;
   onUndo: () => void;
   onRedo: () => void;
@@ -75,6 +77,8 @@ export function MobileLayout({
   saveStatus,
   hasUnsavedChanges,
   autosaveEnabled,
+  noteDateButtonsEnabled,
+  quickRescheduleDaysThreshold,
   onSave,
   onUndo,
   onRedo,
@@ -150,6 +154,7 @@ export function MobileLayout({
               saveStatus={saveStatus}
               hasUnsavedChanges={hasUnsavedChanges}
               autosaveEnabled={autosaveEnabled}
+              showDateButtons
               onSave={onSave}
               onUndo={onUndo}
               onRedo={onRedo}
@@ -183,6 +188,8 @@ export function MobileLayout({
             sortOption={sortOption}
             onSortChange={onSortChange}
             allowReopenCompleted={allowReopenCompleted}
+            showQuickRescheduleButtons={noteDateButtonsEnabled}
+            quickRescheduleDaysThreshold={quickRescheduleDaysThreshold}
           />
         </TabsContent>
       </Tabs>

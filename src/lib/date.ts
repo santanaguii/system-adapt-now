@@ -29,6 +29,29 @@ export function formatDateKey(date: Date) {
   return `${year}-${month}-${day}`;
 }
 
+export function normalizeDateKey(value: string | null | undefined, timeZone = BRAZIL_TIME_ZONE) {
+  if (!value || typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmedValue = value.trim();
+  if (!trimmedValue) {
+    return null;
+  }
+
+  const directMatch = trimmedValue.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (directMatch) {
+    return directMatch[1];
+  }
+
+  const parsedDate = new Date(trimmedValue);
+  if (Number.isNaN(parsedDate.getTime())) {
+    return null;
+  }
+
+  return getDateKeyInTimeZone(parsedDate, timeZone);
+}
+
 export function addDaysToDateKey(dateKey: string, amount: number) {
   return formatDateKey(addDays(parseDateKey(dateKey), amount));
 }
