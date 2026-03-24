@@ -3,6 +3,7 @@ import { useTheme } from 'next-themes';
 import { supabase } from '@/integrations/supabase/client';
 import { FontFamily, FontSize, ColorTheme, ThemeMode, MobileLayoutMode, NoteLineSpacing, AppearanceSettings } from '@/types';
 import { upsertUserSettings } from '@/lib/user-settings';
+import { toast } from '@/components/ui/sonner';
 
 interface UserSettingsRow {
   font_family: string;
@@ -27,6 +28,12 @@ export const defaultAppearance: AppearanceSettings = {
   noteLineSpacing: 35,
 };
 
+const APPEARANCE_FALLBACK_KEY = 'appearance-settings';
+
+function getAppearanceFallbackKey(userId: string) {
+  return `${APPEARANCE_FALLBACK_KEY}:${userId}`;
+}
+
 const fontFamilyMap: Record<FontFamily, string> = {
   inter: "'Inter', system-ui, sans-serif",
   system: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
@@ -40,6 +47,12 @@ const fontSizeMap: Record<FontSize, string> = {
   medium: '16px',
   large: '18px',
 };
+
+const validFontFamilies = new Set<FontFamily>(['inter', 'system', 'roboto', 'opensans', 'poppins']);
+const validFontSizes = new Set<FontSize>(['small', 'medium', 'large']);
+const validColorThemes = new Set<ColorTheme>(['amber', 'blue', 'green', 'purple', 'pink']);
+const validThemeModes = new Set<ThemeMode>(['light', 'dark', 'system']);
+const validMobileLayoutModes = new Set<MobileLayoutMode>(['mobile', 'desktop']);
 
 const legacyNoteLineSpacingMap = {
   compact: 12,
@@ -82,6 +95,62 @@ function parseNoteLineSpacing(value: string | null | undefined) {
   }
 
   return defaultAppearance.noteLineSpacing;
+}
+
+function normalizeAppearanceFallback(value: unknown): AppearanceSettings | null {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return null;
+  }
+
+  const candidate = value as Record<string, unknown>;
+
+  return {
+    fontFamily: validFontFamilies.has(candidate.fontFamily as FontFamily)
+      ? candidate.fontFamily as FontFamily
+      : defaultAppearance.fontFamily,
+    fontSize: validFontSizes.has(candidate.fontSize as FontSize)
+      ? candidate.fontSize as FontSize
+      : defaultAppearance.fontSize,
+    colorTheme: validColorThemes.has(candidate.colorTheme as ColorTheme)
+      ? candidate.colorTheme as ColorTheme
+      : defaultAppearance.colorTheme,
+    themeMode: validThemeModes.has(candidate.themeMode as ThemeMode)
+      ? candidate.themeMode as ThemeMode
+      : defaultAppearance.themeMode,
+    mobileLayoutMode: validMobileLayoutModes.has(candidate.mobileLayoutMode as MobileLayoutMode)
+      ? candidate.mobileLayoutMode as MobileLayoutMode
+      : defaultAppearance.mobileLayoutMode,
+    noteLineSpacing: clampNoteLineSpacing(
+      typeof candidate.noteLineSpacing === 'number'
+        ? candidate.noteLineSpacing
+        : defaultAppearance.noteLineSpacing
+    ),
+  };
+}
+
+function readAppearanceFallback(userId?: string) {
+  if (!userId) {
+    return null;
+  }
+
+  try {
+    const raw = window.localStorage.getItem(getAppearanceFallbackKey(userId));
+    return raw ? normalizeAppearanceFallback(JSON.parse(raw)) : null;
+  } catch (error) {
+    console.error('Error reading appearance fallback:', error);
+    return null;
+  }
+}
+
+function writeAppearanceFallback(userId: string, appearance: AppearanceSettings) {
+  try {
+    window.localStorage.setItem(getAppearanceFallbackKey(userId), JSON.stringify({
+      ...appearance,
+      noteLineSpacing: clampNoteLineSpacing(appearance.noteLineSpacing),
+    }));
+  } catch (error) {
+    console.error('Error writing appearance fallback:', error);
+  }
 }
 
 // Color themes - HSL values for each theme
@@ -203,26 +272,41 @@ export function useAppearance(options: UseAppearanceOptions = {}) {
     }
 
     const loadAppearance = async () => {
+      const appearanceFallback = readAppearanceFallback(userId);
       try {
         const { data, error } = await supabase
           .from('user_settings' as never)
-          .select('font_family, font_size, color_theme, theme_mode, mobile_layout_mode, note_line_spacing')
+          .select('*')
           .eq('user_id', userId)
           .maybeSingle() as { data: UserSettingsRow | null; error: unknown };
 
         if (!error && data) {
           const loaded: AppearanceSettings = {
-            fontFamily: (data.font_family || 'inter') as FontFamily,
-            fontSize: (data.font_size || 'medium') as FontSize,
-            colorTheme: (data.color_theme || 'amber') as ColorTheme,
-            themeMode: (data.theme_mode || 'system') as ThemeMode,
-            mobileLayoutMode: (data.mobile_layout_mode || 'mobile') as MobileLayoutMode,
+            fontFamily: validFontFamilies.has(data.font_family as FontFamily)
+              ? data.font_family as FontFamily
+              : (appearanceFallback?.fontFamily ?? defaultAppearance.fontFamily),
+            fontSize: validFontSizes.has(data.font_size as FontSize)
+              ? data.font_size as FontSize
+              : (appearanceFallback?.fontSize ?? defaultAppearance.fontSize),
+            colorTheme: validColorThemes.has(data.color_theme as ColorTheme)
+              ? data.color_theme as ColorTheme
+              : (appearanceFallback?.colorTheme ?? defaultAppearance.colorTheme),
+            themeMode: validThemeModes.has(data.theme_mode as ThemeMode)
+              ? data.theme_mode as ThemeMode
+              : (appearanceFallback?.themeMode ?? defaultAppearance.themeMode),
+            mobileLayoutMode: validMobileLayoutModes.has(data.mobile_layout_mode as MobileLayoutMode)
+              ? data.mobile_layout_mode as MobileLayoutMode
+              : (appearanceFallback?.mobileLayoutMode ?? defaultAppearance.mobileLayoutMode),
             noteLineSpacing: parseNoteLineSpacing(data.note_line_spacing),
           };
+          writeAppearanceFallback(userId, loaded);
           setAppearance(loaded);
+        } else {
+          setAppearance(appearanceFallback ?? defaultAppearance);
         }
       } catch (error) {
         console.error('Error loading appearance:', error);
+        setAppearance(appearanceFallback ?? defaultAppearance);
       } finally {
         setIsLoading(false);
       }
@@ -252,6 +336,7 @@ export function useAppearance(options: UseAppearanceOptions = {}) {
     setAppearance(newAppearance);
 
     if (!userId) return;
+    writeAppearanceFallback(userId, newAppearance);
 
     try {
       const dbUpdates: Record<string, string> = {};
@@ -266,9 +351,11 @@ export function useAppearance(options: UseAppearanceOptions = {}) {
 
       if (error) {
         console.error('Error saving appearance:', error);
+        toast.error('Nao foi possivel salvar a aparencia no servidor. O valor foi mantido localmente.');
       }
     } catch (error) {
       console.error('Error saving appearance:', error);
+      toast.error('Nao foi possivel salvar a aparencia no servidor. O valor foi mantido localmente.');
     }
   }, [userId, appearance]);
 

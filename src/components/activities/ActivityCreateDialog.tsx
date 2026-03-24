@@ -537,9 +537,10 @@ export function ActivityCreateDialog({
                         return;
                       }
 
+                      const frequency = value as ActivityRecurrence['frequency'];
                       setMeta({
                         [ACTIVITY_META.recurrence]: {
-                          frequency: value,
+                          frequency,
                           interval: 1,
                         } satisfies ActivityRecurrence,
                       });

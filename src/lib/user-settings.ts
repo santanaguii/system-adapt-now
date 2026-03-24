@@ -1,7 +1,31 @@
 import { supabase } from '@/integrations/supabase/client';
-import type { TablesInsert } from '@/integrations/supabase/types';
-import type { ActivityListDisplaySettings, LayoutSettings, SortConfig } from '@/types';
+import type { Json, TablesInsert } from '@/integrations/supabase/types';
+import type { ActivityListDisplaySettings, AppSettings, FilterConfig, LayoutSettings, SortConfig } from '@/types';
 import { defaultActivityFormLayout, normalizeActivityFormLayout } from './activity-form-layout';
+
+const QUICK_RESCHEDULE_THRESHOLD_FALLBACK_KEY = 'user-settings.quick-reschedule-days-threshold';
+const LAYOUT_SETTINGS_FALLBACK_KEY = 'user-settings.layout-settings';
+const GENERAL_SETTINGS_FALLBACK_KEY = 'user-settings.general';
+type UserSettingsInsert = TablesInsert<'user_settings'>;
+type CachedGeneralSettings = Pick<
+  AppSettings,
+  | 'allowReopenCompleted'
+  | 'autosaveEnabled'
+  | 'noteDateButtonsEnabled'
+  | 'quickRescheduleDaysThreshold'
+  | 'layout'
+  | 'listDisplay'
+  | 'savedFilters'
+  | 'savedSort'
+>;
+
+function toJson(value: unknown): Json {
+  return value as Json;
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
 
 export const defaultListDisplay: ActivityListDisplaySettings = {
   showTags: true,
@@ -53,6 +77,168 @@ export function normalizeQuickRescheduleDaysThreshold(value: unknown): number {
   }
 
   return 0;
+}
+
+function getQuickRescheduleDaysThresholdFallbackKey(userId: string) {
+  return `${QUICK_RESCHEDULE_THRESHOLD_FALLBACK_KEY}:${userId}`;
+}
+
+function getLayoutSettingsFallbackKey(userId: string) {
+  return `${LAYOUT_SETTINGS_FALLBACK_KEY}:${userId}`;
+}
+
+function getGeneralSettingsFallbackKey(userId: string) {
+  return `${GENERAL_SETTINGS_FALLBACK_KEY}:${userId}`;
+}
+
+export function readQuickRescheduleDaysThresholdFallback(userId?: string | null): number | null {
+  if (!userId || typeof window === 'undefined') {
+    return null;
+  }
+
+  try {
+    const storedValue = window.localStorage.getItem(getQuickRescheduleDaysThresholdFallbackKey(userId));
+    if (storedValue === null) {
+      return null;
+    }
+
+    return normalizeQuickRescheduleDaysThreshold(JSON.parse(storedValue));
+  } catch (error) {
+    console.error('Error reading quick reschedule threshold fallback:', error);
+    return null;
+  }
+}
+
+export function writeQuickRescheduleDaysThresholdFallback(userId: string, value: number) {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(
+      getQuickRescheduleDaysThresholdFallbackKey(userId),
+      JSON.stringify(normalizeQuickRescheduleDaysThreshold(value))
+    );
+  } catch (error) {
+    console.error('Error writing quick reschedule threshold fallback:', error);
+  }
+}
+
+export function readLayoutSettingsFallback(userId?: string | null): LayoutSettings | null {
+  if (!userId || typeof window === 'undefined') {
+    return null;
+  }
+
+  try {
+    const storedValue = window.localStorage.getItem(getLayoutSettingsFallbackKey(userId));
+    if (storedValue === null) {
+      return null;
+    }
+
+    return normalizeLayoutSettings(JSON.parse(storedValue) as Partial<LayoutSettings>);
+  } catch (error) {
+    console.error('Error reading layout settings fallback:', error);
+    return null;
+  }
+}
+
+export function writeLayoutSettingsFallback(userId: string, layoutSettings: LayoutSettings) {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(
+      getLayoutSettingsFallbackKey(userId),
+      JSON.stringify(normalizeLayoutSettings(layoutSettings))
+    );
+  } catch (error) {
+    console.error('Error writing layout settings fallback:', error);
+  }
+}
+
+export function readGeneralSettingsFallback(userId?: string | null): Partial<CachedGeneralSettings> | null {
+  if (!userId || typeof window === 'undefined') {
+    return null;
+  }
+
+  try {
+    const storedValue = window.localStorage.getItem(getGeneralSettingsFallbackKey(userId));
+    if (storedValue === null) {
+      return null;
+    }
+
+    const parsedValue = JSON.parse(storedValue) as Record<string, unknown>;
+    if (!isObject(parsedValue)) {
+      return null;
+    }
+
+    const fallback: Partial<CachedGeneralSettings> = {};
+
+    if (typeof parsedValue.allowReopenCompleted === 'boolean') {
+      fallback.allowReopenCompleted = parsedValue.allowReopenCompleted;
+    }
+    if (typeof parsedValue.autosaveEnabled === 'boolean') {
+      fallback.autosaveEnabled = parsedValue.autosaveEnabled;
+    }
+    if (typeof parsedValue.noteDateButtonsEnabled === 'boolean') {
+      fallback.noteDateButtonsEnabled = parsedValue.noteDateButtonsEnabled;
+    }
+    if ('quickRescheduleDaysThreshold' in parsedValue) {
+      fallback.quickRescheduleDaysThreshold = normalizeQuickRescheduleDaysThreshold(parsedValue.quickRescheduleDaysThreshold);
+    }
+    if ('layout' in parsedValue) {
+      fallback.layout = normalizeLayoutSettings(parsedValue.layout as Partial<LayoutSettings> | null);
+    }
+    if ('listDisplay' in parsedValue) {
+      fallback.listDisplay = normalizeListDisplaySettings(parsedValue.listDisplay as Partial<ActivityListDisplaySettings> | null);
+    }
+    if (Array.isArray(parsedValue.savedFilters)) {
+      fallback.savedFilters = parsedValue.savedFilters as FilterConfig[];
+    }
+    if (
+      isObject(parsedValue.savedSort) &&
+      typeof parsedValue.savedSort.type === 'string' &&
+      typeof parsedValue.savedSort.direction === 'string'
+    ) {
+      fallback.savedSort = parsedValue.savedSort as unknown as SortConfig;
+    }
+
+    return fallback;
+  } catch (error) {
+    console.error('Error reading general settings fallback:', error);
+    return null;
+  }
+}
+
+export function writeGeneralSettingsFallback(userId: string, settings: CachedGeneralSettings) {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(
+      getGeneralSettingsFallbackKey(userId),
+      JSON.stringify({
+        ...settings,
+        quickRescheduleDaysThreshold: normalizeQuickRescheduleDaysThreshold(settings.quickRescheduleDaysThreshold),
+        layout: normalizeLayoutSettings(settings.layout),
+        listDisplay: normalizeListDisplaySettings(settings.listDisplay),
+      })
+    );
+  } catch (error) {
+    console.error('Error writing general settings fallback:', error);
+  }
+}
+
+export function extractMissingUserSettingsColumn(error: unknown): string | null {
+  if (!error || typeof error !== 'object' || !('message' in error)) {
+    return null;
+  }
+
+  const message = typeof error.message === 'string' ? error.message : '';
+  const match = message.match(/column\s+user_settings\.([a-z0-9_]+)\s+does not exist/i);
+  return match?.[1] ?? null;
 }
 
 export function normalizeListDisplaySettings(listDisplay: Partial<ActivityListDisplaySettings> | null | undefined): ActivityListDisplaySettings {
@@ -114,10 +300,10 @@ export function buildDefaultUserSettings(userId: string): TablesInsert<'user_set
     autosave_enabled: true,
     note_date_buttons_enabled: true,
     quick_reschedule_days_threshold: 0,
-    layout_settings: defaultLayoutSettings,
-    list_display: defaultListDisplay,
+    layout_settings: toJson(defaultLayoutSettings) as UserSettingsInsert['layout_settings'],
+    list_display: toJson(defaultListDisplay) as UserSettingsInsert['list_display'],
     saved_filters: [],
-    saved_sort: defaultSortConfig,
+    saved_sort: toJson(defaultSortConfig) as UserSettingsInsert['saved_sort'],
     font_family: 'inter',
     font_size: 'medium',
     color_theme: 'amber',
@@ -131,13 +317,29 @@ export async function upsertUserSettings(
   userId: string,
   updates: Partial<TablesInsert<'user_settings'>>
 ) {
-  return supabase
-    .from('user_settings')
-    .upsert(
-      {
-        user_id: userId,
-        ...updates,
-      },
-      { onConflict: 'user_id' }
-    );
+  let nextUpdates = { ...updates };
+
+  while (true) {
+    const upsertResult = await supabase
+      .from('user_settings')
+      .upsert(
+        {
+          user_id: userId,
+          ...nextUpdates,
+        },
+        { onConflict: 'user_id' }
+      );
+
+    if (!upsertResult.error) {
+      return upsertResult;
+    }
+
+    const missingColumn = extractMissingUserSettingsColumn(upsertResult.error);
+    if (!missingColumn || !(missingColumn in nextUpdates)) {
+      return upsertResult;
+    }
+
+    const { [missingColumn]: _omitted, ...remainingUpdates } = nextUpdates as Record<string, unknown>;
+    nextUpdates = remainingUpdates as Partial<TablesInsert<'user_settings'>>;
+  }
 }

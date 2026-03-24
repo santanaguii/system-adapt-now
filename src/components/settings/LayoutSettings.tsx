@@ -10,8 +10,29 @@ interface LayoutSettingsTabProps {
 }
 
 export function LayoutSettingsTab({ layout, onUpdate }: LayoutSettingsTabProps) {
-  const notesIsLastVisiblePanel = layout.showNotes && !layout.showActivities;
-  const activitiesIsLastVisiblePanel = layout.showActivities && !layout.showNotes;
+  const handleShowNotesChange = (checked: boolean) => {
+    if (checked) {
+      onUpdate({ showNotes: true });
+      return;
+    }
+
+    onUpdate({
+      showNotes: false,
+      showActivities: layout.showActivities || true,
+    });
+  };
+
+  const handleShowActivitiesChange = (checked: boolean) => {
+    if (checked) {
+      onUpdate({ showActivities: true });
+      return;
+    }
+
+    onUpdate({
+      showActivities: false,
+      showNotes: layout.showNotes || true,
+    });
+  };
 
   return (
     <div className="space-y-6">
@@ -33,11 +54,7 @@ export function LayoutSettingsTab({ layout, onUpdate }: LayoutSettingsTabProps) 
               Exibe o editor principal de notas.
             </p>
           </div>
-          <Switch
-            checked={layout.showNotes}
-            onCheckedChange={(checked) => onUpdate({ showNotes: checked })}
-            disabled={notesIsLastVisiblePanel}
-          />
+          <Switch checked={layout.showNotes} onCheckedChange={handleShowNotesChange} />
         </div>
 
         <div className="flex items-center justify-between rounded-xl border bg-muted/20 px-4 py-3">
@@ -57,11 +74,7 @@ export function LayoutSettingsTab({ layout, onUpdate }: LayoutSettingsTabProps) 
               Exibe o painel principal das atividades.
             </p>
           </div>
-          <Switch
-            checked={layout.showActivities}
-            onCheckedChange={(checked) => onUpdate({ showActivities: checked })}
-            disabled={activitiesIsLastVisiblePanel}
-          />
+          <Switch checked={layout.showActivities} onCheckedChange={handleShowActivitiesChange} />
         </div>
       </div>
 

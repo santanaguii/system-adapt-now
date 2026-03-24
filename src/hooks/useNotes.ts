@@ -237,19 +237,24 @@ export function useNotes(autosaveEnabled: boolean = true) {
         return false;
       }
 
-      // Delete existing lines and insert new ones
-      const { error: deleteError } = await supabase
+      const { data: existingLinesData, error: existingLinesError } = await supabase
         .from('note_lines' as never)
-        .delete()
+        .select('id')
         .eq('note_id', noteData.id);
 
-      if (deleteError) {
-        console.error('Error deleting note lines:', deleteError);
+      if (existingLinesError) {
+        console.error('Error loading existing note lines:', existingLinesError);
         setSaveStatus('error');
         return false;
       }
 
-      // Insert new lines
+      const existingLineIds = new Set(
+        ((existingLinesData as Array<{ id: string }> | null) || []).map((line) => line.id)
+      );
+      const nextLineIds = new Set(note.lines.map((line) => line.id));
+      const linesToDelete = Array.from(existingLineIds).filter((lineId) => !nextLineIds.has(lineId));
+
+      // Upsert current lines before pruning removed ones to avoid destructive intermediate state.
       if (note.lines.length > 0) {
         const linesToInsert = note.lines.map((line, index) => ({
           id: line.id,
@@ -263,10 +268,24 @@ export function useNotes(autosaveEnabled: boolean = true) {
 
         const { error: linesError } = await supabase
           .from('note_lines' as never)
-          .insert(linesToInsert as never);
+          .upsert(linesToInsert as never, { onConflict: 'id' });
 
         if (linesError) {
           console.error('Error saving note lines:', linesError);
+          setSaveStatus('error');
+          return false;
+        }
+      }
+
+      if (linesToDelete.length > 0) {
+        const { error: deleteError } = await supabase
+          .from('note_lines' as never)
+          .delete()
+          .eq('note_id', noteData.id)
+          .in('id', linesToDelete);
+
+        if (deleteError) {
+          console.error('Error deleting removed note lines:', deleteError);
           setSaveStatus('error');
           return false;
         }

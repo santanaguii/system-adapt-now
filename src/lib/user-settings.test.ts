@@ -2,8 +2,15 @@ import { describe, expect, it } from 'vitest';
 import {
   buildDefaultUserSettings,
   defaultLayoutSettings,
+  extractMissingUserSettingsColumn,
   normalizeLayoutSettings,
   normalizeQuickRescheduleDaysThreshold,
+  readGeneralSettingsFallback,
+  readLayoutSettingsFallback,
+  readQuickRescheduleDaysThresholdFallback,
+  writeGeneralSettingsFallback,
+  writeLayoutSettingsFallback,
+  writeQuickRescheduleDaysThresholdFallback,
 } from './user-settings';
 
 describe('buildDefaultUserSettings', () => {
@@ -35,6 +42,99 @@ describe('normalizeQuickRescheduleDaysThreshold', () => {
     expect(normalizeQuickRescheduleDaysThreshold(3)).toBe(3);
     expect(normalizeQuickRescheduleDaysThreshold(3.9)).toBe(3);
     expect(normalizeQuickRescheduleDaysThreshold('7')).toBe(7);
+  });
+});
+
+describe('quick reschedule threshold fallback', () => {
+  it('persists the fallback value in localStorage', () => {
+    window.localStorage.clear();
+
+    writeQuickRescheduleDaysThresholdFallback('user-1', 5.9);
+
+    expect(readQuickRescheduleDaysThresholdFallback('user-1')).toBe(5);
+    expect(readQuickRescheduleDaysThresholdFallback('user-2')).toBeNull();
+  });
+});
+
+describe('layout settings fallback', () => {
+  it('persists layout settings in localStorage', () => {
+    window.localStorage.clear();
+
+    writeLayoutSettingsFallback('user-1', {
+      ...defaultLayoutSettings,
+      showActivities: false,
+    });
+
+    expect(readLayoutSettingsFallback('user-1')).toEqual({
+      ...defaultLayoutSettings,
+      showActivities: false,
+    });
+    expect(readLayoutSettingsFallback('user-2')).toBeNull();
+  });
+});
+
+describe('general settings fallback', () => {
+  it('persists general settings in localStorage', () => {
+    window.localStorage.clear();
+
+    writeGeneralSettingsFallback('user-1', {
+      allowReopenCompleted: false,
+      autosaveEnabled: false,
+      noteDateButtonsEnabled: false,
+      quickRescheduleDaysThreshold: 6,
+      layout: {
+        ...defaultLayoutSettings,
+        showActivities: false,
+      },
+      listDisplay: {
+        showTags: true,
+        showDueDate: false,
+        showPriority: true,
+        visibleFieldIds: ['field-1'],
+        formLayout: {
+          blocks: [
+            { id: 'title', contentKey: 'title', colStart: 1, rowStart: 1, colSpan: 12, rowSpan: 1 },
+          ],
+        },
+      },
+      savedFilters: [],
+      savedSort: { type: 'manual', direction: 'desc' },
+    });
+
+    expect(readGeneralSettingsFallback('user-1')).toEqual({
+      allowReopenCompleted: false,
+      autosaveEnabled: false,
+      noteDateButtonsEnabled: false,
+      quickRescheduleDaysThreshold: 6,
+      layout: {
+        ...defaultLayoutSettings,
+        showActivities: false,
+      },
+      listDisplay: {
+        showTags: true,
+        showDueDate: false,
+        showPriority: true,
+        visibleFieldIds: ['field-1'],
+        formLayout: {
+          blocks: [
+            { id: 'title', contentKey: 'title', colStart: 1, rowStart: 1, colSpan: 12, rowSpan: 1 },
+          ],
+        },
+      },
+      savedFilters: [],
+      savedSort: { type: 'manual', direction: 'desc' },
+    });
+    expect(readGeneralSettingsFallback('user-2')).toBeNull();
+  });
+});
+
+describe('extractMissingUserSettingsColumn', () => {
+  it('extracts the missing column name from PostgREST errors', () => {
+    expect(
+      extractMissingUserSettingsColumn({
+        message: 'column user_settings.quick_reschedule_days_threshold does not exist',
+      })
+    ).toBe('quick_reschedule_days_threshold');
   });
 });
 

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import type { User as SupabaseUser } from '@supabase/supabase-js';
-import { buildDefaultUserSettings } from '@/lib/user-settings';
+import { buildDefaultUserSettings, upsertUserSettings } from '@/lib/user-settings';
 
 export interface User {
   id: string;
@@ -123,25 +123,27 @@ export function useAuth() {
 
     const promise = (async () => {
       try {
-        const [
-          { data: existingTags, error: tagsError },
-          { data: existingFields, error: fieldsError },
-          { data: existingSettings, error: settingsError },
-        ] = await Promise.all([
+        const [tagsResult, fieldsResult, settingsResult] = await Promise.all([
           supabase
             .from('tags' as never)
             .select('name')
-            .eq('user_id', userId) as Promise<{ data: Pick<TagRow, 'name'>[] | null; error: unknown }>,
+            .eq('user_id', userId),
           supabase
             .from('custom_fields' as never)
             .select('key')
-            .eq('user_id', userId) as Promise<{ data: Pick<CustomFieldRow, 'key'>[] | null; error: unknown }>,
+            .eq('user_id', userId),
           supabase
             .from('user_settings' as never)
             .select('user_id')
             .eq('user_id', userId)
-            .maybeSingle() as Promise<{ data: Pick<{ user_id: string }, 'user_id'> | null; error: unknown }>,
+            .maybeSingle(),
         ]);
+        const existingTags = tagsResult.data as Pick<TagRow, 'name'>[] | null;
+        const tagsError = tagsResult.error;
+        const existingFields = fieldsResult.data as Pick<CustomFieldRow, 'key'>[] | null;
+        const fieldsError = fieldsResult.error;
+        const existingSettings = settingsResult.data as Pick<{ user_id: string }, 'user_id'> | null;
+        const settingsError = settingsResult.error;
 
         if (tagsError) {
           console.error('Error checking default tags:', tagsError);
@@ -179,9 +181,9 @@ export function useAuth() {
         if (settingsError) {
           console.error('Error checking user settings:', settingsError);
         } else if (!existingSettings) {
-          const { error } = await supabase
-            .from('user_settings' as never)
-            .insert(buildDefaultUserSettings(userId) as never);
+          const defaultSettings = buildDefaultUserSettings(userId);
+          const { user_id: _userId, ...defaultSettingsWithoutUserId } = defaultSettings;
+          const { error } = await upsertUserSettings(userId, defaultSettingsWithoutUserId);
           if (error) {
             console.error('Error creating default user settings:', error);
           }

@@ -367,9 +367,10 @@ export function ActivityList({
   }, [activities.active]);
 
   useEffect(() => {
+    const timeouts = completionTimeoutsRef.current;
     return () => {
-      completionTimeoutsRef.current.forEach((timeoutId) => window.clearTimeout(timeoutId));
-      completionTimeoutsRef.current.clear();
+      timeouts.forEach((timeoutId) => window.clearTimeout(timeoutId));
+      timeouts.clear();
     };
   }, []);
 

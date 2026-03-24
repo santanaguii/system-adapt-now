@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import type { Json, TablesInsert } from '@/integrations/supabase/types';
 import { AppSettings, CustomField, Tag, SortOption, ActivityCreationMode, ActivityListDisplaySettings, FilterConfig, SortConfig, NoteTemplate, LayoutSettings } from '@/types';
 import { useAuthContext } from '@/contexts/AuthContext';
 import {
@@ -9,10 +10,17 @@ import {
   normalizeLayoutSettings,
   normalizeListDisplaySettings,
   normalizeQuickRescheduleDaysThreshold,
+  readGeneralSettingsFallback,
+  readLayoutSettingsFallback,
+  readQuickRescheduleDaysThresholdFallback,
   upsertUserSettings,
+  writeGeneralSettingsFallback,
+  writeLayoutSettingsFallback,
+  writeQuickRescheduleDaysThresholdFallback,
 } from '@/lib/user-settings';
 import { defaultNoteTemplates, readNoteTemplates, writeNoteTemplates } from '@/lib/note-templates';
 import { dedupeCustomFields, sanitizeListDisplayForFields } from '@/lib/custom-fields';
+import { toast } from '@/components/ui/sonner';
 
 // Type definitions for external Supabase tables
 interface TagRow {
@@ -50,6 +58,12 @@ interface UserSettingsRow {
   list_display?: ActivityListDisplaySettings;
   saved_filters?: FilterConfig[];
   saved_sort?: SortConfig;
+}
+
+type UserSettingsInsert = TablesInsert<'user_settings'>;
+
+function toJson(value: unknown): Json {
+  return value as Json;
 }
 
 const defaultSettings: AppSettings = {
@@ -98,6 +112,34 @@ export function useSettings() {
   });
   const [isLoading, setIsLoading] = useState(true);
 
+  const persistGeneralSettingsFallback = useCallback((nextSettings: {
+    allowReopenCompleted: boolean;
+    defaultSort: SortOption;
+    activityCreationMode: ActivityCreationMode;
+    autosaveEnabled: boolean;
+    noteDateButtonsEnabled: boolean;
+    quickRescheduleDaysThreshold: number;
+    layout: LayoutSettings;
+    listDisplay: ActivityListDisplaySettings;
+    savedFilters: FilterConfig[];
+    savedSort: SortConfig;
+  }) => {
+    if (!user) {
+      return;
+    }
+
+    writeGeneralSettingsFallback(user.id, {
+      allowReopenCompleted: nextSettings.allowReopenCompleted,
+      autosaveEnabled: nextSettings.autosaveEnabled,
+      noteDateButtonsEnabled: nextSettings.noteDateButtonsEnabled,
+      quickRescheduleDaysThreshold: nextSettings.quickRescheduleDaysThreshold,
+      layout: nextSettings.layout,
+      listDisplay: nextSettings.listDisplay,
+      savedFilters: nextSettings.savedFilters,
+      savedSort: nextSettings.savedSort,
+    });
+  }, [user]);
+
   // Load all settings from database
   useEffect(() => {
     if (!isAuthenticated || !user) {
@@ -123,6 +165,10 @@ export function useSettings() {
     const loadSettings = async () => {
       setIsLoading(true);
       try {
+        const generalSettingsFallback = readGeneralSettingsFallback(user.id);
+        const layoutSettingsFallback = readLayoutSettingsFallback(user.id);
+        const quickRescheduleDaysThresholdFallback = readQuickRescheduleDaysThresholdFallback(user.id);
+
         // Load tags
         const { data: tagsData, error: tagsError } = await supabase
           .from('tags' as never)
@@ -169,18 +215,50 @@ export function useSettings() {
           .maybeSingle() as { data: UserSettingsRow | null; error: unknown };
 
         if (!settingsError && settingsData) {
-          setGeneralSettings({
-            allowReopenCompleted: settingsData.allow_reopen_completed,
-            defaultSort: settingsData.default_sort as SortOption,
-            activityCreationMode: 'detailed',
-            autosaveEnabled: settingsData.autosave_enabled ?? true,
-            noteDateButtonsEnabled: settingsData.note_date_buttons_enabled ?? true,
-            quickRescheduleDaysThreshold: normalizeQuickRescheduleDaysThreshold(settingsData.quick_reschedule_days_threshold),
-            layout: normalizeLayoutSettings(settingsData.layout_settings as Partial<LayoutSettings> | null),
-            listDisplay: normalizeListDisplaySettings(settingsData.list_display as Partial<ActivityListDisplaySettings> | null),
-            savedFilters: settingsData.saved_filters ?? [],
-            savedSort: settingsData.saved_sort ?? defaultSortConfig,
-          });
+          const quickRescheduleDaysThreshold =
+            settingsData.quick_reschedule_days_threshold === undefined
+              ? (quickRescheduleDaysThresholdFallback ?? generalSettingsFallback?.quickRescheduleDaysThreshold ?? 0)
+              : normalizeQuickRescheduleDaysThreshold(settingsData.quick_reschedule_days_threshold);
+          const layoutSettings =
+            settingsData.layout_settings === undefined
+              ? (layoutSettingsFallback ?? generalSettingsFallback?.layout ?? defaultLayoutSettings)
+              : normalizeLayoutSettings(settingsData.layout_settings as Partial<LayoutSettings> | null);
+          const nextGeneralSettings = {
+            allowReopenCompleted: settingsData.allow_reopen_completed ?? generalSettingsFallback?.allowReopenCompleted ?? true,
+            defaultSort: (settingsData.default_sort as SortOption) ?? defaultSettings.defaultSort,
+            activityCreationMode: 'detailed' as const,
+            autosaveEnabled: settingsData.autosave_enabled ?? generalSettingsFallback?.autosaveEnabled ?? true,
+            noteDateButtonsEnabled: settingsData.note_date_buttons_enabled ?? generalSettingsFallback?.noteDateButtonsEnabled ?? true,
+            quickRescheduleDaysThreshold,
+            layout: layoutSettings,
+            listDisplay: settingsData.list_display === undefined
+              ? (generalSettingsFallback?.listDisplay ?? defaultListDisplay)
+              : normalizeListDisplaySettings(settingsData.list_display as Partial<ActivityListDisplaySettings> | null),
+            savedFilters: Array.isArray(settingsData.saved_filters)
+              ? settingsData.saved_filters
+              : (generalSettingsFallback?.savedFilters ?? []),
+            savedSort: settingsData.saved_sort ?? generalSettingsFallback?.savedSort ?? defaultSortConfig,
+          };
+
+          writeQuickRescheduleDaysThresholdFallback(user.id, quickRescheduleDaysThreshold);
+          writeLayoutSettingsFallback(user.id, layoutSettings);
+          persistGeneralSettingsFallback(nextGeneralSettings);
+          setGeneralSettings(nextGeneralSettings);
+        } else {
+          const nextGeneralSettings = {
+            allowReopenCompleted: generalSettingsFallback?.allowReopenCompleted ?? true,
+            defaultSort: 'manual' as const,
+            activityCreationMode: 'detailed' as const,
+            autosaveEnabled: generalSettingsFallback?.autosaveEnabled ?? true,
+            noteDateButtonsEnabled: generalSettingsFallback?.noteDateButtonsEnabled ?? true,
+            quickRescheduleDaysThreshold: quickRescheduleDaysThresholdFallback ?? generalSettingsFallback?.quickRescheduleDaysThreshold ?? 0,
+            layout: layoutSettingsFallback ?? generalSettingsFallback?.layout ?? defaultLayoutSettings,
+            listDisplay: generalSettingsFallback?.listDisplay ?? defaultListDisplay,
+            savedFilters: generalSettingsFallback?.savedFilters ?? [],
+            savedSort: generalSettingsFallback?.savedSort ?? defaultSortConfig,
+          };
+          persistGeneralSettingsFallback(nextGeneralSettings);
+          setGeneralSettings(nextGeneralSettings);
         }
 
         setNoteTemplates(readNoteTemplates(user.id));
@@ -192,7 +270,7 @@ export function useSettings() {
     };
 
     loadSettings();
-  }, [isAuthenticated, user]);
+  }, [isAuthenticated, user, persistGeneralSettingsFallback]);
 
   // Combine into settings object
   const settings = useMemo<AppSettings>(() => ({
@@ -228,6 +306,7 @@ export function useSettings() {
 
       if (error || !data) {
         console.error('Error adding tag:', error);
+        toast.error('Nao foi possivel adicionar a tag.');
         return null;
       }
 
@@ -241,6 +320,7 @@ export function useSettings() {
       return newTag;
     } catch (error) {
       console.error('Error adding tag:', error);
+      toast.error('Nao foi possivel adicionar a tag.');
       return null;
     }
   }, [user]);
@@ -257,12 +337,14 @@ export function useSettings() {
 
       if (error) {
         console.error('Error updating tag:', error);
+        toast.error('Nao foi possivel atualizar a tag.');
         return;
       }
 
       setTags(prev => prev.map(t => t.id === id ? { ...t, ...updates } : t));
     } catch (error) {
       console.error('Error updating tag:', error);
+      toast.error('Nao foi possivel atualizar a tag.');
     }
   }, [user]);
 
@@ -278,12 +360,14 @@ export function useSettings() {
 
       if (error) {
         console.error('Error deleting tag:', error);
+        toast.error('Nao foi possivel excluir a tag.');
         return;
       }
 
       setTags(prev => prev.filter(t => t.id !== id));
     } catch (error) {
       console.error('Error deleting tag:', error);
+      toast.error('Nao foi possivel excluir a tag.');
     }
   }, [user]);
 
@@ -316,6 +400,7 @@ export function useSettings() {
 
       if (error || !data) {
         console.error('Error adding custom field:', error);
+        toast.error('Nao foi possivel adicionar o campo.');
         return null;
       }
 
@@ -337,6 +422,7 @@ export function useSettings() {
       return newField;
     } catch (error) {
       console.error('Error adding custom field:', error);
+      toast.error('Nao foi possivel adicionar o campo.');
       return null;
     }
   }, [user]);
@@ -366,12 +452,14 @@ export function useSettings() {
 
       if (error) {
         console.error('Error updating custom field:', error);
+        toast.error('Nao foi possivel atualizar o campo.');
         return;
       }
 
       setCustomFields(prev => prev.map(f => f.id === id ? { ...f, ...updates } : f));
     } catch (error) {
       console.error('Error updating custom field:', error);
+      toast.error('Nao foi possivel atualizar o campo.');
     }
   }, [user]);
 
@@ -387,12 +475,14 @@ export function useSettings() {
 
       if (error) {
         console.error('Error deleting custom field:', error);
+        toast.error('Nao foi possivel excluir o campo.');
         return;
       }
 
       setCustomFields(prev => prev.filter(f => f.id !== id));
     } catch (error) {
       console.error('Error deleting custom field:', error);
+      toast.error('Nao foi possivel excluir o campo.');
     }
   }, [user]);
 
@@ -431,12 +521,20 @@ export function useSettings() {
           quickRescheduleDaysThreshold: normalizeQuickRescheduleDaysThreshold(updates.quickRescheduleDaysThreshold),
         };
 
+    if (normalizedUpdates.quickRescheduleDaysThreshold !== undefined) {
+      writeQuickRescheduleDaysThresholdFallback(user.id, normalizedUpdates.quickRescheduleDaysThreshold);
+    }
+
     // Update local state (optimistic)
-    setGeneralSettings(prev => ({ ...prev, ...normalizedUpdates }));
+    setGeneralSettings(prev => {
+      const nextSettings = { ...prev, ...normalizedUpdates };
+      persistGeneralSettingsFallback(nextSettings);
+      return nextSettings;
+    });
 
     try {
       // Convert to DB format
-      const dbUpdates: Partial<UserSettingsRow> = {};
+      const dbUpdates: Partial<UserSettingsInsert> = {};
       if (normalizedUpdates.allowReopenCompleted !== undefined) dbUpdates.allow_reopen_completed = normalizedUpdates.allowReopenCompleted;
       if (normalizedUpdates.defaultSort !== undefined) dbUpdates.default_sort = normalizedUpdates.defaultSort;
       if (normalizedUpdates.activityCreationMode !== undefined) dbUpdates.activity_creation_mode = normalizedUpdates.activityCreationMode;
@@ -448,36 +546,46 @@ export function useSettings() {
 
       if (error) {
         console.error('Error updating general settings:', error);
+        toast.error('Nao foi possivel salvar as configuracoes gerais.');
       }
     } catch (error) {
       console.error('Error updating general settings:', error);
+      toast.error('Nao foi possivel salvar as configuracoes gerais.');
     }
-  }, [user]);
+  }, [user, persistGeneralSettingsFallback]);
 
   // List display settings operations
   const updateListDisplay = useCallback(async (updates: Partial<ActivityListDisplaySettings>) => {
     if (!user) return;
 
     // Update local state (optimistic)
-    setGeneralSettings(prev => ({ 
-      ...prev, 
-      listDisplay: { ...prev.listDisplay, ...updates } 
-    }));
+    setGeneralSettings(prev => {
+      const nextSettings = {
+        ...prev,
+        listDisplay: { ...prev.listDisplay, ...updates },
+      };
+      persistGeneralSettingsFallback(nextSettings);
+      return nextSettings;
+    });
 
     try {
       const newListDisplay = sanitizeListDisplayForFields(
         normalizeListDisplaySettings({ ...generalSettings.listDisplay, ...updates }),
         customFields
       );
-      const { error } = await upsertUserSettings(user.id, { list_display: newListDisplay });
+      const { error } = await upsertUserSettings(user.id, {
+        list_display: toJson(newListDisplay) as UserSettingsInsert['list_display'],
+      });
 
       if (error) {
         console.error('Error updating list display settings:', error);
+        toast.error('Nao foi possivel salvar a configuracao da lista.');
       }
     } catch (error) {
       console.error('Error updating list display settings:', error);
+      toast.error('Nao foi possivel salvar a configuracao da lista.');
     }
-  }, [user, generalSettings.listDisplay, customFields]);
+  }, [user, generalSettings.listDisplay, customFields, persistGeneralSettingsFallback]);
 
   const updateLayoutSettings = useCallback(async (updates: Partial<LayoutSettings>) => {
     if (!user) return;
@@ -487,13 +595,21 @@ export function useSettings() {
       ...updates,
     });
 
+    writeLayoutSettingsFallback(user.id, nextLayoutSettings);
+
     setGeneralSettings(prev => ({
       ...prev,
       layout: nextLayoutSettings,
     }));
+    persistGeneralSettingsFallback({
+      ...generalSettings,
+      layout: nextLayoutSettings,
+    });
 
     try {
-      const { error } = await upsertUserSettings(user.id, { layout_settings: nextLayoutSettings });
+      const { error } = await upsertUserSettings(user.id, {
+        layout_settings: toJson(nextLayoutSettings) as UserSettingsInsert['layout_settings'],
+      });
 
       if (error) {
         console.error('Error updating layout settings:', error);
@@ -501,43 +617,59 @@ export function useSettings() {
     } catch (error) {
       console.error('Error updating layout settings:', error);
     }
-  }, [user, generalSettings.layout]);
+  }, [user, generalSettings, persistGeneralSettingsFallback]);
 
   // Saved filters operations
   const updateSavedFilters = useCallback(async (filters: FilterConfig[]) => {
     if (!user) return;
 
     // Update local state (optimistic)
-    setGeneralSettings(prev => ({ ...prev, savedFilters: filters }));
+    setGeneralSettings(prev => {
+      const nextSettings = { ...prev, savedFilters: filters };
+      persistGeneralSettingsFallback(nextSettings);
+      return nextSettings;
+    });
 
     try {
-      const { error } = await upsertUserSettings(user.id, { saved_filters: filters });
+      const { error } = await upsertUserSettings(user.id, {
+        saved_filters: toJson(filters) as UserSettingsInsert['saved_filters'],
+      });
 
       if (error) {
         console.error('Error updating saved filters:', error);
+        toast.error('Nao foi possivel salvar os filtros.');
       }
     } catch (error) {
       console.error('Error updating saved filters:', error);
+      toast.error('Nao foi possivel salvar os filtros.');
     }
-  }, [user]);
+  }, [user, persistGeneralSettingsFallback]);
 
   // Saved sort operations
   const updateSavedSort = useCallback(async (sort: SortConfig) => {
     if (!user) return;
 
     // Update local state (optimistic)
-    setGeneralSettings(prev => ({ ...prev, savedSort: sort }));
+    setGeneralSettings(prev => {
+      const nextSettings = { ...prev, savedSort: sort };
+      persistGeneralSettingsFallback(nextSettings);
+      return nextSettings;
+    });
 
     try {
-      const { error } = await upsertUserSettings(user.id, { saved_sort: sort });
+      const { error } = await upsertUserSettings(user.id, {
+        saved_sort: toJson(sort) as UserSettingsInsert['saved_sort'],
+      });
 
       if (error) {
         console.error('Error updating saved sort:', error);
+        toast.error('Nao foi possivel salvar a ordenacao.');
       }
     } catch (error) {
       console.error('Error updating saved sort:', error);
+      toast.error('Nao foi possivel salvar a ordenacao.');
     }
-  }, [user]);
+  }, [user, persistGeneralSettingsFallback]);
 
   const updateNoteTemplates = useCallback(async (templates: NoteTemplate[]) => {
     const nextTemplates = templates.length > 0 ? templates : defaultNoteTemplates;

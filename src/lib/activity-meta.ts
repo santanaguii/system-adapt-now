@@ -237,17 +237,26 @@ export function getSubtasks(activity: Activity): ActivitySubtask[] {
     return [];
   }
 
-  return value.filter((item): item is ActivitySubtask => {
-    return (
+  return value.flatMap((item) => {
+    if (
       typeof item === 'object' &&
       item !== null &&
+      !Array.isArray(item) &&
       'id' in item &&
       'title' in item &&
       'completed' in item &&
       typeof item.id === 'string' &&
       typeof item.title === 'string' &&
       typeof item.completed === 'boolean'
-    );
+    ) {
+      return [{
+        id: item.id,
+        title: item.title,
+        completed: item.completed,
+      }];
+    }
+
+    return [];
   });
 }
 

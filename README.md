@@ -1,68 +1,72 @@
-# Welcome to your Lovable project
+# System Adapt Now
 
-## Project info
+Aplicacao web/mobile para organizacao de atividades, notas diarias e configuracoes personalizadas por usuario.
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+## Stack
 
-## How can I edit this code?
+- Vite
+- React
+- TypeScript
+- Tailwind CSS
+- shadcn/ui
+- Supabase
+- Capacitor Android
 
-There are several ways of editing your application.
-
-**Use Lovable**
-
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
-
-Changes made via Lovable will be committed automatically to this repo.
-
-**Use your preferred IDE**
-
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
-
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
-
-Follow these steps:
+## Setup local
 
 ```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
-
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
-npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
+npm install
 npm run dev
 ```
 
-**Edit a file directly in GitHub**
+O projeto depende das variaveis do `.env` para conectar ao Supabase.
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+## Validacao local
 
-**Use GitHub Codespaces**
+```sh
+npm run test
+npm run lint
+node .\node_modules\typescript\bin\tsc -p tsconfig.app.json --noEmit
+```
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+Observacao importante:
 
-## What technologies are used for this project?
+- `npm run lint` pode ser lento se executado na raiz inteira; durante manutencao prefira `eslint src`.
+- O projeto deve permanecer com `tsc --noEmit` limpo antes de publicar.
 
-This project is built with:
+## Migrations do Supabase
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+Sempre aplique as migrations antes de testar ou publicar mudancas que usam `user_settings`, `custom_fields`, `notes` ou outras tabelas.
 
-## How can I deploy this project?
+Fluxo recomendado:
 
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
+```sh
+supabase db push
+```
+
+Se estiver usando um banco remoto diferente do schema local, valide explicitamente se as colunas abaixo existem em `public.user_settings`:
+
+- `note_date_buttons_enabled`
+- `quick_reschedule_days_threshold`
+- `layout_settings`
+
+As migrations relevantes ficam em:
+
+- `supabase/migrations/20260317213000_add_note_date_buttons_enabled_to_user_settings.sql`
+- `supabase/migrations/20260317220000_add_quick_reschedule_days_threshold_to_user_settings.sql`
+- `supabase/migrations/20260322120000_add_layout_settings_to_user_settings.sql`
+
+Sem isso, o frontend pode aparentar salvar configuracoes mas recarregar com valores incorretos por incompatibilidade de schema.
+
+## Deploy
+
+Antes de publicar:
+
+1. Rode testes.
+2. Rode lint em `src`.
+3. Rode `tsc --noEmit`.
+4. Aplique migrations no banco alvo.
+5. Se houver alteracoes na funcao de reset de senha, publique a Edge Function.
 
 ## Android APK via GitHub Actions
 

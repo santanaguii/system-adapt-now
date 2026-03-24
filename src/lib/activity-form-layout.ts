@@ -103,7 +103,7 @@ export function normalizeActivityFormLayout(layout: Partial<ActivityFormLayoutSe
       });
     }
 
-    return normalizeLegacyBlocks([block as Record<string, unknown>]).map((legacyBlock) => ({
+    return normalizeLegacyBlocks([block as unknown as Record<string, unknown>]).map((legacyBlock) => ({
       ...legacyBlock,
       id: legacyBlock.id || `block-${index}`,
     }));
