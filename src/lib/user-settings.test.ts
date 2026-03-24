@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { buildDefaultUserSettings, normalizeQuickRescheduleDaysThreshold } from './user-settings';
+import {
+  buildDefaultUserSettings,
+  defaultLayoutSettings,
+  normalizeLayoutSettings,
+  normalizeQuickRescheduleDaysThreshold,
+} from './user-settings';
 
 describe('buildDefaultUserSettings', () => {
   it('creates a complete settings row for new users', () => {
@@ -11,6 +16,7 @@ describe('buildDefaultUserSettings', () => {
     expect(settings.note_date_buttons_enabled).toBe(true);
     expect(settings.quick_reschedule_days_threshold).toBe(0);
     expect(settings.activity_creation_mode).toBe('detailed');
+    expect(settings.layout_settings).toEqual(defaultLayoutSettings);
     expect(settings.mobile_layout_mode).toBe('mobile');
     expect(settings.note_line_spacing).toBe('35');
     expect(settings.saved_filters).toEqual([]);
@@ -29,5 +35,29 @@ describe('normalizeQuickRescheduleDaysThreshold', () => {
     expect(normalizeQuickRescheduleDaysThreshold(3)).toBe(3);
     expect(normalizeQuickRescheduleDaysThreshold(3.9)).toBe(3);
     expect(normalizeQuickRescheduleDaysThreshold('7')).toBe(7);
+  });
+});
+
+describe('normalizeLayoutSettings', () => {
+  it('falls back to defaults and keeps at least one main panel visible', () => {
+    expect(normalizeLayoutSettings(undefined)).toEqual(defaultLayoutSettings);
+    expect(normalizeLayoutSettings({ showNotes: false, showActivities: false })).toEqual({
+      ...defaultLayoutSettings,
+      showNotes: true,
+      showActivities: true,
+    });
+  });
+
+  it('clamps persisted panel sizes to valid ranges', () => {
+    expect(normalizeLayoutSettings({
+      desktopMainPanelSize: 10,
+      desktopNotesListPanelSize: 80,
+      tabletNotesPanelSize: 10,
+    })).toEqual({
+      ...defaultLayoutSettings,
+      desktopMainPanelSize: 40,
+      desktopNotesListPanelSize: 45,
+      tabletNotesPanelSize: 35,
+    });
   });
 });

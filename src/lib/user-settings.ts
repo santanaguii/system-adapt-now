@@ -1,6 +1,6 @@
 import { supabase } from '@/integrations/supabase/client';
 import type { TablesInsert } from '@/integrations/supabase/types';
-import type { ActivityListDisplaySettings, SortConfig } from '@/types';
+import type { ActivityListDisplaySettings, LayoutSettings, SortConfig } from '@/types';
 import { defaultActivityFormLayout, normalizeActivityFormLayout } from './activity-form-layout';
 
 export const defaultListDisplay: ActivityListDisplaySettings = {
@@ -15,6 +15,30 @@ export const defaultSortConfig: SortConfig = {
   type: 'manual',
   direction: 'asc',
 };
+
+export const defaultLayoutSettings: LayoutSettings = {
+  showTabs: true,
+  showNotes: true,
+  showNotesList: true,
+  showActivities: true,
+  desktopMainPanelSize: 65,
+  desktopNotesListPanelSize: 30,
+  tabletNotesPanelSize: 55,
+};
+
+function normalizePanelSize(
+  value: unknown,
+  fallback: number,
+  min: number,
+  max: number
+): number {
+  const numericValue = typeof value === 'string' ? Number.parseFloat(value) : value;
+  if (typeof numericValue === 'number' && Number.isFinite(numericValue)) {
+    return Math.min(max, Math.max(min, Math.round(numericValue * 100) / 100));
+  }
+
+  return fallback;
+}
 
 export function normalizeQuickRescheduleDaysThreshold(value: unknown): number {
   if (typeof value === 'number' && Number.isFinite(value)) {
@@ -41,6 +65,46 @@ export function normalizeListDisplaySettings(listDisplay: Partial<ActivityListDi
   };
 }
 
+export function normalizeLayoutSettings(layoutSettings: Partial<LayoutSettings> | null | undefined): LayoutSettings {
+  const showTabs = typeof layoutSettings?.showTabs === 'boolean'
+    ? layoutSettings.showTabs
+    : defaultLayoutSettings.showTabs;
+  const showNotes = typeof layoutSettings?.showNotes === 'boolean'
+    ? layoutSettings.showNotes
+    : defaultLayoutSettings.showNotes;
+  const showNotesList = typeof layoutSettings?.showNotesList === 'boolean'
+    ? layoutSettings.showNotesList
+    : defaultLayoutSettings.showNotesList;
+  const showActivities = typeof layoutSettings?.showActivities === 'boolean'
+    ? layoutSettings.showActivities
+    : defaultLayoutSettings.showActivities;
+
+  return {
+    showTabs,
+    showNotes: showNotes || !showActivities,
+    showNotesList,
+    showActivities: showActivities || !showNotes,
+    desktopMainPanelSize: normalizePanelSize(
+      layoutSettings?.desktopMainPanelSize,
+      defaultLayoutSettings.desktopMainPanelSize,
+      40,
+      80
+    ),
+    desktopNotesListPanelSize: normalizePanelSize(
+      layoutSettings?.desktopNotesListPanelSize,
+      defaultLayoutSettings.desktopNotesListPanelSize,
+      20,
+      45
+    ),
+    tabletNotesPanelSize: normalizePanelSize(
+      layoutSettings?.tabletNotesPanelSize,
+      defaultLayoutSettings.tabletNotesPanelSize,
+      35,
+      70
+    ),
+  };
+}
+
 export function buildDefaultUserSettings(userId: string): TablesInsert<'user_settings'> {
   return {
     user_id: userId,
@@ -50,6 +114,7 @@ export function buildDefaultUserSettings(userId: string): TablesInsert<'user_set
     autosave_enabled: true,
     note_date_buttons_enabled: true,
     quick_reschedule_days_threshold: 0,
+    layout_settings: defaultLayoutSettings,
     list_display: defaultListDisplay,
     saved_filters: [],
     saved_sort: defaultSortConfig,

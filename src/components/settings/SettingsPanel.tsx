@@ -5,6 +5,7 @@ import {
   CustomField,
   FieldType,
   FilterConfig,
+  LayoutSettings,
   NoteTemplate,
   SortConfig,
   Tag,
@@ -25,6 +26,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Plus, Trash2, X } from 'lucide-react';
 import { AppearanceSettingsTab } from './AppearanceSettings';
+import { LayoutSettingsTab } from './LayoutSettings';
 import { ListDisplaySettingsTab } from './ListDisplaySettings';
 import { ActivityFormLayoutSettingsTab } from './ActivityFormLayoutSettings';
 import { NoteTemplateSettingsTab } from './NoteTemplateSettings';
@@ -37,6 +39,7 @@ export interface SettingsPanelPreview {
   noteDateButtonsEnabled: boolean;
   quickRescheduleDaysThreshold: number;
   appearance: AppearanceSettings;
+  layout: LayoutSettings;
   listDisplay: ActivityListDisplaySettings;
   savedFilters: FilterConfig[];
   savedSort: SortConfig;
@@ -56,6 +59,7 @@ interface SettingsPanelProps {
   noteDateButtonsEnabled: boolean;
   quickRescheduleDaysThreshold: number;
   appearance: AppearanceSettings;
+  layout: LayoutSettings;
   listDisplay: ActivityListDisplaySettings;
   savedFilters: FilterConfig[];
   savedSort: SortConfig;
@@ -72,6 +76,7 @@ interface SettingsPanelProps {
     quickRescheduleDaysThreshold?: number;
   }) => Promise<void> | void;
   onUpdateAppearance: (updates: Partial<AppearanceSettings>) => Promise<void> | void;
+  onUpdateLayoutSettings: (updates: Partial<LayoutSettings>) => Promise<void> | void;
   onUpdateListDisplay: (updates: Partial<ActivityListDisplaySettings>) => Promise<void> | void;
   onUpdateFilters: (filters: FilterConfig[]) => Promise<void> | void;
   onUpdateSort: (sort: SortConfig) => Promise<void> | void;
@@ -163,6 +168,7 @@ export function SettingsPanel({
   noteDateButtonsEnabled,
   quickRescheduleDaysThreshold,
   appearance,
+  layout,
   listDisplay,
   savedFilters,
   savedSort,
@@ -174,6 +180,7 @@ export function SettingsPanel({
   onDeleteTag,
   onUpdateGeneralSettings,
   onUpdateAppearance,
+  onUpdateLayoutSettings,
   onUpdateListDisplay,
   onUpdateFilters,
   onUpdateSort,
@@ -185,6 +192,7 @@ export function SettingsPanel({
   const [draftNoteDateButtonsEnabled, setDraftNoteDateButtonsEnabled] = useState(noteDateButtonsEnabled);
   const [draftQuickRescheduleDaysThreshold, setDraftQuickRescheduleDaysThreshold] = useState(quickRescheduleDaysThreshold);
   const [draftAppearance, setDraftAppearance] = useState<AppearanceSettings>(appearance);
+  const [draftLayout, setDraftLayout] = useState<LayoutSettings>(layout);
   const [draftListDisplay, setDraftListDisplay] = useState<ActivityListDisplaySettings>(listDisplay);
   const [draftSavedFilters, setDraftSavedFilters] = useState<FilterConfig[]>(savedFilters);
   const [draftSavedSort, setDraftSavedSort] = useState<SortConfig>(savedSort);
@@ -209,6 +217,7 @@ export function SettingsPanel({
     setDraftNoteDateButtonsEnabled(noteDateButtonsEnabled);
     setDraftQuickRescheduleDaysThreshold(quickRescheduleDaysThreshold);
     setDraftAppearance(appearance);
+    setDraftLayout(layout);
     setDraftListDisplay(listDisplay);
     setDraftSavedFilters(savedFilters);
     setDraftSavedSort(savedSort);
@@ -230,6 +239,7 @@ export function SettingsPanel({
     quickRescheduleDaysThreshold,
     customFields,
     isOpen,
+    layout,
     listDisplay,
     savedFilters,
     savedSort,
@@ -257,6 +267,7 @@ export function SettingsPanel({
       noteDateButtonsEnabled: draftNoteDateButtonsEnabled,
       quickRescheduleDaysThreshold: draftQuickRescheduleDaysThreshold,
       appearance: draftAppearance,
+      layout: draftLayout,
       listDisplay: sanitizedDraftListDisplay,
       savedFilters: draftSavedFilters,
       savedSort: draftSavedSort,
@@ -268,6 +279,7 @@ export function SettingsPanel({
     draftAllowReopenCompleted,
     draftAppearance,
     draftAutosaveEnabled,
+    draftLayout,
     draftNoteDateButtonsEnabled,
     draftQuickRescheduleDaysThreshold,
     draftNoteTemplates,
@@ -328,6 +340,7 @@ export function SettingsPanel({
       draftNoteDateButtonsEnabled !== noteDateButtonsEnabled ||
       draftQuickRescheduleDaysThreshold !== quickRescheduleDaysThreshold ||
       shallowChanged(draftAppearance, appearance) ||
+      shallowChanged(draftLayout, layout) ||
       shallowChanged(sanitizedDraftListDisplay, listDisplay) ||
       shallowChanged(draftSavedFilters, savedFilters) ||
       shallowChanged(draftSavedSort, savedSort) ||
@@ -345,12 +358,14 @@ export function SettingsPanel({
     draftAllowReopenCompleted,
     draftAppearance,
     draftAutosaveEnabled,
+    draftLayout,
     draftNoteDateButtonsEnabled,
     draftQuickRescheduleDaysThreshold,
     draftSavedFilters,
     draftSavedSort,
     draftTags,
     draftNoteTemplates,
+    layout,
     listDisplay,
     orderedFields,
     noteTemplates,
@@ -382,6 +397,10 @@ export function SettingsPanel({
 
       if (shallowChanged(draftAppearance, appearance)) {
         await Promise.resolve(onUpdateAppearance(draftAppearance));
+      }
+
+      if (shallowChanged(draftLayout, layout)) {
+        await Promise.resolve(onUpdateLayoutSettings(draftLayout));
       }
 
       if (shallowChanged(draftSavedFilters, savedFilters)) {
@@ -495,8 +514,9 @@ export function SettingsPanel({
 
         <div className="flex-1 min-h-0 overflow-y-auto px-4 pb-3 pt-2">
           <Tabs defaultValue="general" className="flex min-h-full flex-col gap-4">
-            <TabsList className="grid h-auto w-full shrink-0 grid-cols-2 gap-1 rounded-xl border bg-muted/20 p-1 sm:grid-cols-4">
+            <TabsList className="grid h-auto w-full shrink-0 grid-cols-2 gap-1 rounded-xl border bg-muted/20 p-1 sm:grid-cols-5">
               <TabsTrigger className="whitespace-normal px-2 py-2 text-xs sm:text-sm" value="general">Geral</TabsTrigger>
+              <TabsTrigger className="whitespace-normal px-2 py-2 text-xs sm:text-sm" value="layout">Layout</TabsTrigger>
               <TabsTrigger className="whitespace-normal px-2 py-2 text-xs sm:text-sm" value="list">Lista</TabsTrigger>
               <TabsTrigger className="whitespace-normal px-2 py-2 text-xs sm:text-sm" value="appearance">Aparencia</TabsTrigger>
               <TabsTrigger className="whitespace-normal px-2 py-2 text-xs sm:text-sm" value="notes">Notas</TabsTrigger>
@@ -571,6 +591,10 @@ export function SettingsPanel({
                 onUpdateFilters={setDraftSavedFilters}
                 onUpdateSort={setDraftSavedSort}
               />
+            </TabsContent>
+
+            <TabsContent value="layout" className="mt-0">
+              <LayoutSettingsTab layout={draftLayout} onUpdate={(updates) => setDraftLayout((prev) => ({ ...prev, ...updates }))} />
             </TabsContent>
 
             <TabsContent value="appearance" className="mt-0">

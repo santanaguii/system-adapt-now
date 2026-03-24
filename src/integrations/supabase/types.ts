@@ -221,6 +221,7 @@ export type Database = {
           font_family: string
           font_size: string
           id: string
+          layout_settings: Json | null
           list_display: Json | null
           mobile_layout_mode: string | null
           note_date_buttons_enabled: boolean
@@ -240,6 +241,7 @@ export type Database = {
           font_family?: string
           font_size?: string
           id?: string
+          layout_settings?: Json | null
           list_display?: Json | null
           mobile_layout_mode?: string | null
           note_date_buttons_enabled?: boolean
@@ -259,6 +261,7 @@ export type Database = {
           font_family?: string
           font_size?: string
           id?: string
+          layout_settings?: Json | null
           list_display?: Json | null
           mobile_layout_mode?: string | null
           note_date_buttons_enabled?: boolean

@@ -1,10 +1,12 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { AppSettings, CustomField, Tag, SortOption, ActivityCreationMode, ActivityListDisplaySettings, FilterConfig, SortConfig, NoteTemplate } from '@/types';
+import { AppSettings, CustomField, Tag, SortOption, ActivityCreationMode, ActivityListDisplaySettings, FilterConfig, SortConfig, NoteTemplate, LayoutSettings } from '@/types';
 import { useAuthContext } from '@/contexts/AuthContext';
 import {
+  defaultLayoutSettings,
   defaultListDisplay,
   defaultSortConfig,
+  normalizeLayoutSettings,
   normalizeListDisplaySettings,
   normalizeQuickRescheduleDaysThreshold,
   upsertUserSettings,
@@ -44,6 +46,7 @@ interface UserSettingsRow {
   autosave_enabled: boolean;
   note_date_buttons_enabled?: boolean;
   quick_reschedule_days_threshold?: number | null;
+  layout_settings?: LayoutSettings;
   list_display?: ActivityListDisplaySettings;
   saved_filters?: FilterConfig[];
   saved_sort?: SortConfig;
@@ -59,6 +62,7 @@ const defaultSettings: AppSettings = {
   autosaveEnabled: true,
   noteDateButtonsEnabled: true,
   quickRescheduleDaysThreshold: 0,
+  layout: defaultLayoutSettings,
   listDisplay: defaultListDisplay,
   savedFilters: [],
   savedSort: defaultSortConfig,
@@ -76,6 +80,7 @@ export function useSettings() {
     autosaveEnabled: boolean;
     noteDateButtonsEnabled: boolean;
     quickRescheduleDaysThreshold: number;
+    layout: LayoutSettings;
     listDisplay: ActivityListDisplaySettings;
     savedFilters: FilterConfig[];
     savedSort: SortConfig;
@@ -86,6 +91,7 @@ export function useSettings() {
     autosaveEnabled: true,
     noteDateButtonsEnabled: true,
     quickRescheduleDaysThreshold: 0,
+    layout: defaultLayoutSettings,
     listDisplay: defaultListDisplay,
     savedFilters: [],
     savedSort: defaultSortConfig,
@@ -105,6 +111,7 @@ export function useSettings() {
         autosaveEnabled: true,
         noteDateButtonsEnabled: true,
         quickRescheduleDaysThreshold: 0,
+        layout: defaultLayoutSettings,
         listDisplay: defaultListDisplay,
         savedFilters: [],
         savedSort: defaultSortConfig,
@@ -169,6 +176,7 @@ export function useSettings() {
             autosaveEnabled: settingsData.autosave_enabled ?? true,
             noteDateButtonsEnabled: settingsData.note_date_buttons_enabled ?? true,
             quickRescheduleDaysThreshold: normalizeQuickRescheduleDaysThreshold(settingsData.quick_reschedule_days_threshold),
+            layout: normalizeLayoutSettings(settingsData.layout_settings as Partial<LayoutSettings> | null),
             listDisplay: normalizeListDisplaySettings(settingsData.list_display as Partial<ActivityListDisplaySettings> | null),
             savedFilters: settingsData.saved_filters ?? [],
             savedSort: settingsData.saved_sort ?? defaultSortConfig,
@@ -197,6 +205,7 @@ export function useSettings() {
     autosaveEnabled: generalSettings.autosaveEnabled,
     noteDateButtonsEnabled: generalSettings.noteDateButtonsEnabled,
     quickRescheduleDaysThreshold: generalSettings.quickRescheduleDaysThreshold,
+    layout: generalSettings.layout,
     listDisplay: sanitizeListDisplayForFields(generalSettings.listDisplay, customFields),
     savedFilters: generalSettings.savedFilters,
     savedSort: generalSettings.savedSort,
@@ -470,6 +479,30 @@ export function useSettings() {
     }
   }, [user, generalSettings.listDisplay, customFields]);
 
+  const updateLayoutSettings = useCallback(async (updates: Partial<LayoutSettings>) => {
+    if (!user) return;
+
+    const nextLayoutSettings = normalizeLayoutSettings({
+      ...generalSettings.layout,
+      ...updates,
+    });
+
+    setGeneralSettings(prev => ({
+      ...prev,
+      layout: nextLayoutSettings,
+    }));
+
+    try {
+      const { error } = await upsertUserSettings(user.id, { layout_settings: nextLayoutSettings });
+
+      if (error) {
+        console.error('Error updating layout settings:', error);
+      }
+    } catch (error) {
+      console.error('Error updating layout settings:', error);
+    }
+  }, [user, generalSettings.layout]);
+
   // Saved filters operations
   const updateSavedFilters = useCallback(async (filters: FilterConfig[]) => {
     if (!user) return;
@@ -524,6 +557,7 @@ export function useSettings() {
     deleteTag,
     getTagById,
     updateGeneralSettings,
+    updateLayoutSettings,
     updateListDisplay,
     updateSavedFilters,
     updateSavedSort,

@@ -147,6 +147,16 @@ export interface ActivityFormLayoutSettings {
   blocks: ActivityFormLayoutBlock[];
 }
 
+export interface LayoutSettings {
+  showTabs: boolean;
+  showNotes: boolean;
+  showNotesList: boolean;
+  showActivities: boolean;
+  desktopMainPanelSize: number;
+  desktopNotesListPanelSize: number;
+  tabletNotesPanelSize: number;
+}
+
 // Activity list display settings
 export interface ActivityListDisplaySettings {
   showTags: boolean;
@@ -184,6 +194,7 @@ export interface AppSettings {
   autosaveEnabled: boolean;
   noteDateButtonsEnabled: boolean;
   quickRescheduleDaysThreshold: number;
+  layout: LayoutSettings;
   listDisplay: ActivityListDisplaySettings;
   savedFilters: FilterConfig[];
   savedSort: SortConfig;

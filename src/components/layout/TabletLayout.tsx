@@ -7,7 +7,7 @@ import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { Brand } from '@/components/brand/Brand';
 import { LogOut, User, Menu } from 'lucide-react';
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@/components/ui/resizable';
-import { Activity, CustomField, Tag, SortOption, DailyNote, NoteSearchResult, LineType, ActivityListDisplaySettings, FilterConfig, NoteLine, NoteTemplate } from '@/types';
+import { Activity, CustomField, Tag, SortOption, DailyNote, NoteSearchResult, LineType, ActivityListDisplaySettings, FilterConfig, NoteLine, NoteTemplate, LayoutSettings } from '@/types';
 import { SaveStatus } from '@/hooks/useNotes';
 import { useState } from 'react';
 
@@ -33,6 +33,8 @@ interface TabletLayoutProps {
   autosaveEnabled: boolean;
   noteDateButtonsEnabled: boolean;
   quickRescheduleDaysThreshold: number;
+  layout: LayoutSettings;
+  onUpdateLayoutSettings: (updates: Partial<LayoutSettings>) => void;
   onSave: () => void;
   onUndo: () => void;
   onRedo: () => void;
@@ -81,6 +83,8 @@ export function TabletLayout({
   autosaveEnabled,
   noteDateButtonsEnabled,
   quickRescheduleDaysThreshold,
+  layout,
+  onUpdateLayoutSettings,
   onSave,
   onUndo,
   onRedo,
@@ -109,33 +113,88 @@ export function TabletLayout({
 }: TabletLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
+  const renderNotes = () => (
+    <div className="flex h-full min-h-0 flex-col overflow-hidden">
+      <NoteEditor
+        currentDate={currentDate}
+        note={note}
+        onDateChange={onDateChange}
+        onUpdateLine={onUpdateLine}
+        onAddLine={onAddLine}
+        onDeleteLine={onDeleteLine}
+        onToggleCollapse={onToggleCollapse}
+        onUpdateIndent={onUpdateIndent}
+        saveStatus={saveStatus}
+        hasUnsavedChanges={hasUnsavedChanges}
+        autosaveEnabled={autosaveEnabled}
+        showDateButtons
+        onSave={onSave}
+        onUndo={onUndo}
+        onRedo={onRedo}
+        canUndo={canUndo}
+        canRedo={canRedo}
+        onCreateActivityFromLine={onCreateActivityFromLine}
+        onOpenDetailedActivityFromLine={onOpenDetailedActivityFromLine}
+        activityCreatedLineIds={activityCreatedLineIds}
+        highlightedLineIds={highlightedLineIds}
+        searchFocusKey={searchFocusKey}
+        noteTemplates={noteTemplates}
+      />
+      <NoteFormattingHints />
+    </div>
+  );
+
+  const renderActivities = () => (
+    <ActivityList
+      currentDate={currentDate}
+      activities={activities}
+      tags={tags}
+      customFields={customFields}
+      listDisplay={listDisplay}
+      savedFilters={savedFilters}
+      onAdd={onAddActivity}
+      onUpdate={onUpdateActivity}
+      onDelete={onDeleteActivity}
+      onToggleComplete={onToggleComplete}
+      onReorder={onReorderActivities}
+      onOpenSettings={onOpenSettings}
+      sortOption={sortOption}
+      onSortChange={onSortChange}
+      allowReopenCompleted={allowReopenCompleted}
+      showQuickRescheduleButtons={noteDateButtonsEnabled}
+      quickRescheduleDaysThreshold={quickRescheduleDaysThreshold}
+    />
+  );
+
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-background">
       <div className="flex items-center justify-between border-b bg-muted/30 px-4 py-2">
         <div className="flex min-w-0 items-center gap-3">
-          <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
-            <SheetTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-8 w-8">
-                <Menu className="h-4 w-4" />
-              </Button>
-            </SheetTrigger>
-            <SheetContent side="left" className="w-[280px] p-0">
-              <NotesSidebar
-                dates={allDatesWithNotes}
-                currentDate={currentDate}
-                showDateButtons
-                onSelectDate={(date) => {
-                  onDateChange(date);
-                  setSidebarOpen(false);
-                }}
-                onSearch={onSearch}
-                onSelectSearchResult={(result) => {
-                  onSelectSearchResult?.(result);
-                  setSidebarOpen(false);
-                }}
-              />
-            </SheetContent>
-          </Sheet>
+          {layout.showNotesList && layout.showNotes && (
+            <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
+              <SheetTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-8 w-8">
+                  <Menu className="h-4 w-4" />
+                </Button>
+              </SheetTrigger>
+              <SheetContent side="left" className="w-[280px] p-0">
+                <NotesSidebar
+                  dates={allDatesWithNotes}
+                  currentDate={currentDate}
+                  showDateButtons
+                  onSelectDate={(date) => {
+                    onDateChange(date);
+                    setSidebarOpen(false);
+                  }}
+                  onSearch={onSearch}
+                  onSelectSearchResult={(result) => {
+                    onSelectSearchResult?.(result);
+                    setSidebarOpen(false);
+                  }}
+                />
+              </SheetContent>
+            </Sheet>
+          )}
           <Brand compact />
         </div>
         <div className="flex items-center gap-3">
@@ -155,64 +214,31 @@ export function TabletLayout({
 
       {/* Main content - Two panels */}
       <div className="min-h-0 flex flex-1 overflow-hidden">
-        <ResizablePanelGroup direction="horizontal" className="flex-1">
-          {/* Note Editor */}
-          <ResizablePanel defaultSize={55} minSize={35}>
-            <div className="flex h-full min-h-0 flex-col overflow-hidden">
-              <NoteEditor
-                currentDate={currentDate}
-                note={note}
-                onDateChange={onDateChange}
-                onUpdateLine={onUpdateLine}
-                onAddLine={onAddLine}
-                onDeleteLine={onDeleteLine}
-                onToggleCollapse={onToggleCollapse}
-                onUpdateIndent={onUpdateIndent}
-                saveStatus={saveStatus}
-                hasUnsavedChanges={hasUnsavedChanges}
-                autosaveEnabled={autosaveEnabled}
-                showDateButtons
-                onSave={onSave}
-                onUndo={onUndo}
-                onRedo={onRedo}
-                canUndo={canUndo}
-                canRedo={canRedo}
-                onCreateActivityFromLine={onCreateActivityFromLine}
-                onOpenDetailedActivityFromLine={onOpenDetailedActivityFromLine}
-                activityCreatedLineIds={activityCreatedLineIds}
-                highlightedLineIds={highlightedLineIds}
-                searchFocusKey={searchFocusKey}
-                noteTemplates={noteTemplates}
-              />
-              <NoteFormattingHints />
-            </div>
-          </ResizablePanel>
+        {layout.showNotes && layout.showActivities ? (
+          <ResizablePanelGroup
+            direction="horizontal"
+            className="flex-1"
+            onLayout={(sizes) => {
+              if (sizes.length === 2) {
+                onUpdateLayoutSettings({ tabletNotesPanelSize: sizes[0] });
+              }
+            }}
+          >
+            <ResizablePanel defaultSize={layout.tabletNotesPanelSize} minSize={35}>
+              {renderNotes()}
+            </ResizablePanel>
 
-          <ResizableHandle withHandle />
+            <ResizableHandle withHandle />
 
-          {/* Activities Panel */}
-          <ResizablePanel defaultSize={45} minSize={30}>
-            <ActivityList
-              currentDate={currentDate}
-              activities={activities}
-              tags={tags}
-              customFields={customFields}
-              listDisplay={listDisplay}
-              savedFilters={savedFilters}
-              onAdd={onAddActivity}
-              onUpdate={onUpdateActivity}
-              onDelete={onDeleteActivity}
-              onToggleComplete={onToggleComplete}
-              onReorder={onReorderActivities}
-              onOpenSettings={onOpenSettings}
-              sortOption={sortOption}
-              onSortChange={onSortChange}
-              allowReopenCompleted={allowReopenCompleted}
-              showQuickRescheduleButtons={noteDateButtonsEnabled}
-              quickRescheduleDaysThreshold={quickRescheduleDaysThreshold}
-            />
-          </ResizablePanel>
-        </ResizablePanelGroup>
+            <ResizablePanel defaultSize={100 - layout.tabletNotesPanelSize} minSize={30}>
+              {renderActivities()}
+            </ResizablePanel>
+          </ResizablePanelGroup>
+        ) : layout.showNotes ? (
+          <div className="flex-1">{renderNotes()}</div>
+        ) : (
+          <div className="flex-1">{renderActivities()}</div>
+        )}
       </div>
     </div>
   );

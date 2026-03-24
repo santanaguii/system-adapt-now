@@ -12,6 +12,7 @@ import {
   AppearanceSettings,
   CustomField,
   FilterConfig,
+  LayoutSettings,
   LineType,
   NoteLine,
   NoteSearchResult,
@@ -67,6 +68,7 @@ interface SettingsPreviewState {
   noteDateButtonsEnabled: boolean;
   quickRescheduleDaysThreshold: number;
   appearance: AppearanceSettings;
+  layout: LayoutSettings;
   listDisplay: import('@/types').ActivityListDisplaySettings;
   savedFilters: FilterConfig[];
   savedSort: SortConfig;
@@ -97,6 +99,8 @@ const Index = () => {
   const [activeNoteSearchFlash, setActiveNoteSearchFlash] = useState<(NoteSearchResult & { flashKey: string }) | null>(null);
   const [pendingSearchSelection, setPendingSearchSelection] = useState<NoteSearchResult | null>(null);
   const searchFlashTimeoutRef = useRef<number | null>(null);
+  const layoutSaveTimeoutRef = useRef<number | null>(null);
+  const pendingLayoutUpdatesRef = useRef<Partial<LayoutSettings>>({});
 
   useEffect(() => {
     const handleResize = () => setWindowWidth(window.innerWidth);
@@ -116,6 +120,7 @@ const Index = () => {
     updateTag,
     deleteTag,
     updateGeneralSettings,
+    updateLayoutSettings,
     updateListDisplay,
     updateSavedFilters,
     updateSavedSort,
@@ -242,6 +247,9 @@ const Index = () => {
       if (searchFlashTimeoutRef.current !== null) {
         window.clearTimeout(searchFlashTimeoutRef.current);
       }
+      if (layoutSaveTimeoutRef.current !== null) {
+        window.clearTimeout(layoutSaveTimeoutRef.current);
+      }
     };
   }, []);
 
@@ -359,6 +367,7 @@ const Index = () => {
   const effectiveAppearance = settingsPreview?.appearance ?? appearance;
   const effectiveTags = settingsPreview?.tags ?? settings.tags;
   const effectiveCustomFields = settingsPreview?.customFields ?? settings.customFields;
+  const effectiveLayout = settingsPreview?.layout ?? settings.layout;
   const effectiveListDisplay = settingsPreview?.listDisplay ?? settings.listDisplay;
   const effectiveSavedFilters = settingsPreview?.savedFilters ?? settings.savedFilters;
   const effectiveNoteTemplates = settingsPreview?.noteTemplates ?? settings.noteTemplates;
@@ -377,6 +386,24 @@ const Index = () => {
     setSettingsPreview(preview);
     setPreviewAppearance(preview.appearance);
   }, [setPreviewAppearance]);
+
+  const scheduleLayoutSettingsUpdate = useCallback((updates: Partial<LayoutSettings>) => {
+    pendingLayoutUpdatesRef.current = {
+      ...pendingLayoutUpdatesRef.current,
+      ...updates,
+    };
+
+    if (layoutSaveTimeoutRef.current !== null) {
+      window.clearTimeout(layoutSaveTimeoutRef.current);
+    }
+
+    layoutSaveTimeoutRef.current = window.setTimeout(() => {
+      const nextUpdates = pendingLayoutUpdatesRef.current;
+      pendingLayoutUpdatesRef.current = {};
+      layoutSaveTimeoutRef.current = null;
+      void updateLayoutSettings(nextUpdates);
+    }, 250);
+  }, [updateLayoutSettings]);
 
   const commonProps = {
     username: user?.username || '',
@@ -397,6 +424,8 @@ const Index = () => {
     autosaveEnabled: effectiveAutosaveEnabled,
     noteDateButtonsEnabled: effectiveNoteDateButtonsEnabled,
     quickRescheduleDaysThreshold: effectiveQuickRescheduleDaysThreshold,
+    layout: effectiveLayout,
+    onUpdateLayoutSettings: scheduleLayoutSettingsUpdate,
     onSave: saveAllPending,
     onUndo: undo,
     onRedo: redo,
@@ -444,6 +473,127 @@ const Index = () => {
       );
     }
 
+    const showDesktopWorkspace = effectiveLayout.showNotes || effectiveLayout.showNotesList;
+    const showDesktopActivities = effectiveLayout.showActivities;
+
+    const desktopWorkspace = (() => {
+      if (effectiveLayout.showNotesList && effectiveLayout.showNotes) {
+        return (
+          <div className="flex h-full min-h-0 flex-col overflow-hidden">
+            <ResizablePanelGroup
+              direction="horizontal"
+              className="min-h-0 flex-1"
+              onLayout={(sizes) => {
+                if (sizes.length === 2) {
+                  scheduleLayoutSettingsUpdate({ desktopNotesListPanelSize: sizes[0] });
+                }
+              }}
+            >
+              <ResizablePanel defaultSize={effectiveLayout.desktopNotesListPanelSize} minSize={20} maxSize={45}>
+                <Suspense fallback={<SectionFallback />}>
+                  <NotesSidebar
+                    dates={allDatesWithNotes}
+                    currentDate={currentDate}
+                    showDateButtons={effectiveNoteDateButtonsEnabled}
+                    onSelectDate={handleDateChange}
+                    onSearch={searchNotes}
+                    onSelectSearchResult={handleSelectSearchResult}
+                  />
+                </Suspense>
+              </ResizablePanel>
+
+              <ResizableHandle withHandle />
+
+              <ResizablePanel defaultSize={100 - effectiveLayout.desktopNotesListPanelSize} minSize={40}>
+                <Suspense fallback={<SectionFallback />}>
+                  <NoteEditor
+                    currentDate={currentDate}
+                    note={currentNote}
+                    onDateChange={handleDateChange}
+                    onUpdateLine={handleUpdateLine}
+                    onAddLine={handleAddLine}
+                    onDeleteLine={handleDeleteLine}
+                    onToggleCollapse={handleToggleCollapse}
+                    onUpdateIndent={handleUpdateIndent}
+                    saveStatus={saveStatus}
+                    hasUnsavedChanges={hasUnsavedChanges}
+                    autosaveEnabled={effectiveAutosaveEnabled}
+                    showDateButtons
+                    onSave={saveAllPending}
+                    onUndo={undo}
+                    onRedo={redo}
+                    canUndo={canUndo}
+                    canRedo={canRedo}
+                    onCreateActivityFromLine={handleOpenDetailedActivityFormFromLine}
+                    onOpenDetailedActivityFromLine={handleOpenDetailedActivityFormFromLine}
+                    activityCreatedLineIds={activityCreatedLineIds}
+                    highlightedLineIds={activeNoteSearchFlash?.date === currentNote.date ? activeNoteSearchFlash.matchedLineIds : []}
+                    searchFocusKey={activeNoteSearchFlash ? activeNoteSearchFlash.flashKey : null}
+                    noteTemplates={effectiveNoteTemplates}
+                  />
+                </Suspense>
+              </ResizablePanel>
+            </ResizablePanelGroup>
+
+            <Suspense fallback={null}>
+              <NoteFormattingHints />
+            </Suspense>
+          </div>
+        );
+      }
+
+      if (effectiveLayout.showNotesList) {
+        return (
+          <Suspense fallback={<SectionFallback />}>
+            <NotesSidebar
+              dates={allDatesWithNotes}
+              currentDate={currentDate}
+              showDateButtons={effectiveNoteDateButtonsEnabled}
+              onSelectDate={handleDateChange}
+              onSearch={searchNotes}
+              onSelectSearchResult={handleSelectSearchResult}
+            />
+          </Suspense>
+        );
+      }
+
+      return (
+        <div className="flex h-full min-h-0 flex-col overflow-hidden">
+          <Suspense fallback={<SectionFallback />}>
+            <NoteEditor
+              currentDate={currentDate}
+              note={currentNote}
+              onDateChange={handleDateChange}
+              onUpdateLine={handleUpdateLine}
+              onAddLine={handleAddLine}
+              onDeleteLine={handleDeleteLine}
+              onToggleCollapse={handleToggleCollapse}
+              onUpdateIndent={handleUpdateIndent}
+              saveStatus={saveStatus}
+              hasUnsavedChanges={hasUnsavedChanges}
+              autosaveEnabled={effectiveAutosaveEnabled}
+              showDateButtons
+              onSave={saveAllPending}
+              onUndo={undo}
+              onRedo={redo}
+              canUndo={canUndo}
+              canRedo={canRedo}
+              onCreateActivityFromLine={handleOpenDetailedActivityFormFromLine}
+              onOpenDetailedActivityFromLine={handleOpenDetailedActivityFormFromLine}
+              activityCreatedLineIds={activityCreatedLineIds}
+              highlightedLineIds={activeNoteSearchFlash?.date === currentNote.date ? activeNoteSearchFlash.matchedLineIds : []}
+              searchFocusKey={activeNoteSearchFlash ? activeNoteSearchFlash.flashKey : null}
+              noteTemplates={effectiveNoteTemplates}
+            />
+          </Suspense>
+
+          <Suspense fallback={null}>
+            <NoteFormattingHints />
+          </Suspense>
+        </div>
+      );
+    })();
+
     return (
       <div className="flex h-screen flex-col overflow-hidden bg-background">
         <div className="shrink-0 flex items-center justify-between border-b bg-muted/30 px-4 py-2">
@@ -461,88 +611,71 @@ const Index = () => {
         </div>
 
         <div className="min-h-0 flex flex-1 overflow-hidden">
-          <ResizablePanelGroup direction="horizontal" className="flex-1">
-            <ResizablePanel defaultSize={65} minSize={40}>
-              <div className="flex h-full min-h-0 flex-col overflow-hidden">
-                <ResizablePanelGroup direction="horizontal" className="min-h-0 flex-1">
-                  <ResizablePanel defaultSize={30} minSize={20} maxSize={45}>
-                    <Suspense fallback={<SectionFallback />}>
-                      <NotesSidebar
-                        dates={allDatesWithNotes}
-                        currentDate={currentDate}
-                        showDateButtons={effectiveNoteDateButtonsEnabled}
-                        onSelectDate={handleDateChange}
-                        onSearch={searchNotes}
-                        onSelectSearchResult={handleSelectSearchResult}
-                      />
-                    </Suspense>
-                  </ResizablePanel>
+          {showDesktopWorkspace && showDesktopActivities ? (
+            <ResizablePanelGroup
+              direction="horizontal"
+              className="flex-1"
+              onLayout={(sizes) => {
+                if (sizes.length === 2) {
+                  scheduleLayoutSettingsUpdate({ desktopMainPanelSize: sizes[0] });
+                }
+              }}
+            >
+              <ResizablePanel defaultSize={effectiveLayout.desktopMainPanelSize} minSize={40}>
+                {desktopWorkspace}
+              </ResizablePanel>
 
-                  <ResizableHandle withHandle />
+              <ResizableHandle withHandle />
 
-                  <ResizablePanel defaultSize={70} minSize={40}>
-                    <Suspense fallback={<SectionFallback />}>
-                      <NoteEditor
-                        currentDate={currentDate}
-                        note={currentNote}
-                        onDateChange={handleDateChange}
-                        onUpdateLine={handleUpdateLine}
-                        onAddLine={handleAddLine}
-                        onDeleteLine={handleDeleteLine}
-                        onToggleCollapse={handleToggleCollapse}
-                        onUpdateIndent={handleUpdateIndent}
-                        saveStatus={saveStatus}
-                        hasUnsavedChanges={hasUnsavedChanges}
-                        autosaveEnabled={effectiveAutosaveEnabled}
-                        showDateButtons
-                        onSave={saveAllPending}
-                        onUndo={undo}
-                        onRedo={redo}
-                        canUndo={canUndo}
-                        canRedo={canRedo}
-                        onCreateActivityFromLine={handleOpenDetailedActivityFormFromLine}
-                        onOpenDetailedActivityFromLine={handleOpenDetailedActivityFormFromLine}
-                        activityCreatedLineIds={activityCreatedLineIds}
-                        highlightedLineIds={activeNoteSearchFlash?.date === currentNote.date ? activeNoteSearchFlash.matchedLineIds : []}
-                        searchFocusKey={activeNoteSearchFlash ? activeNoteSearchFlash.flashKey : null}
-                        noteTemplates={effectiveNoteTemplates}
-                      />
-                    </Suspense>
-                  </ResizablePanel>
-                </ResizablePanelGroup>
-
-                <Suspense fallback={null}>
-                  <NoteFormattingHints />
+              <ResizablePanel defaultSize={100 - effectiveLayout.desktopMainPanelSize} minSize={20}>
+                <Suspense fallback={<SectionFallback />}>
+                  <ActivityList
+                    currentDate={currentDate}
+                    activities={sortedActivities}
+                    tags={effectiveTags}
+                    customFields={effectiveCustomFields}
+                    listDisplay={effectiveListDisplay}
+                    savedFilters={effectiveSavedFilters}
+                    onAdd={addActivity}
+                    onUpdate={updateActivity}
+                    onDelete={deleteActivity}
+                    onToggleComplete={toggleComplete}
+                    onReorder={reorderActivities}
+                    onOpenSettings={() => setSettingsOpen(true)}
+                    sortOption={sortOption}
+                    onSortChange={setSortOption}
+                    allowReopenCompleted={effectiveAllowReopenCompleted}
+                    showQuickRescheduleButtons={effectiveNoteDateButtonsEnabled}
+                    quickRescheduleDaysThreshold={effectiveQuickRescheduleDaysThreshold}
+                  />
                 </Suspense>
-              </div>
-            </ResizablePanel>
-
-            <ResizableHandle withHandle />
-
-            <ResizablePanel defaultSize={35} minSize={20}>
-              <Suspense fallback={<SectionFallback />}>
-                <ActivityList
-                  currentDate={currentDate}
-                  activities={sortedActivities}
-                  tags={effectiveTags}
-                  customFields={effectiveCustomFields}
-                  listDisplay={effectiveListDisplay}
-                  savedFilters={effectiveSavedFilters}
-                  onAdd={addActivity}
-                  onUpdate={updateActivity}
-                  onDelete={deleteActivity}
-                  onToggleComplete={toggleComplete}
-                  onReorder={reorderActivities}
-                  onOpenSettings={() => setSettingsOpen(true)}
-                  sortOption={sortOption}
-                  onSortChange={setSortOption}
-                  allowReopenCompleted={effectiveAllowReopenCompleted}
-                  showQuickRescheduleButtons={effectiveNoteDateButtonsEnabled}
-                  quickRescheduleDaysThreshold={effectiveQuickRescheduleDaysThreshold}
-                />
-              </Suspense>
-            </ResizablePanel>
-          </ResizablePanelGroup>
+              </ResizablePanel>
+            </ResizablePanelGroup>
+          ) : showDesktopWorkspace ? (
+            <div className="flex-1">{desktopWorkspace}</div>
+          ) : (
+            <Suspense fallback={<SectionFallback />}>
+              <ActivityList
+                currentDate={currentDate}
+                activities={sortedActivities}
+                tags={effectiveTags}
+                customFields={effectiveCustomFields}
+                listDisplay={effectiveListDisplay}
+                savedFilters={effectiveSavedFilters}
+                onAdd={addActivity}
+                onUpdate={updateActivity}
+                onDelete={deleteActivity}
+                onToggleComplete={toggleComplete}
+                onReorder={reorderActivities}
+                onOpenSettings={() => setSettingsOpen(true)}
+                sortOption={sortOption}
+                onSortChange={setSortOption}
+                allowReopenCompleted={effectiveAllowReopenCompleted}
+                showQuickRescheduleButtons={effectiveNoteDateButtonsEnabled}
+                quickRescheduleDaysThreshold={effectiveQuickRescheduleDaysThreshold}
+              />
+            </Suspense>
+          )}
         </div>
       </div>
     );
@@ -574,6 +707,7 @@ const Index = () => {
             noteDateButtonsEnabled={settings.noteDateButtonsEnabled}
             quickRescheduleDaysThreshold={settings.quickRescheduleDaysThreshold}
             appearance={appearance}
+            layout={settings.layout}
             listDisplay={settings.listDisplay}
             savedFilters={settings.savedFilters}
             savedSort={settings.savedSort}
@@ -585,6 +719,7 @@ const Index = () => {
             onDeleteTag={deleteTag}
             onUpdateGeneralSettings={updateGeneralSettings}
             onUpdateAppearance={updateAppearance}
+            onUpdateLayoutSettings={updateLayoutSettings}
             onUpdateListDisplay={updateListDisplay}
             onUpdateFilters={updateSavedFilters}
             onUpdateSort={updateSavedSort}
