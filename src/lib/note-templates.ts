@@ -77,6 +77,10 @@ export function normalizeNoteTemplates(value: unknown): NoteTemplate[] {
   return templates.length > 0 ? templates : defaultNoteTemplates;
 }
 
+export function areNoteTemplatesEqual(left: NoteTemplate[], right: NoteTemplate[]) {
+  return JSON.stringify(normalizeNoteTemplates(left)) === JSON.stringify(normalizeNoteTemplates(right));
+}
+
 export function readNoteTemplates(userId: string | null | undefined) {
   if (!userId || typeof window === 'undefined') {
     return defaultNoteTemplates;

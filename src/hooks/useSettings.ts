@@ -18,7 +18,7 @@ import {
   writeLayoutSettingsFallback,
   writeQuickRescheduleDaysThresholdFallback,
 } from '@/lib/user-settings';
-import { defaultNoteTemplates, readNoteTemplates, writeNoteTemplates } from '@/lib/note-templates';
+import { areNoteTemplatesEqual, defaultNoteTemplates, normalizeNoteTemplates, readNoteTemplates, writeNoteTemplates } from '@/lib/note-templates';
 import { dedupeCustomFields, sanitizeListDisplayForFields } from '@/lib/custom-fields';
 import { toast } from '@/components/ui/sonner';
 
@@ -56,6 +56,7 @@ interface UserSettingsRow {
   quick_reschedule_days_threshold?: number | null;
   layout_settings?: LayoutSettings;
   list_display?: ActivityListDisplaySettings;
+  note_templates?: Json | null;
   saved_filters?: FilterConfig[];
   saved_sort?: SortConfig;
 }
@@ -64,6 +65,14 @@ type UserSettingsInsert = TablesInsert<'user_settings'>;
 
 function toJson(value: unknown): Json {
   return value as Json;
+}
+
+function getNoteTemplatesDatabaseValue(templates: NoteTemplate[]): UserSettingsInsert['note_templates'] {
+  if (areNoteTemplatesEqual(templates, defaultNoteTemplates)) {
+    return null;
+  }
+
+  return toJson(templates) as UserSettingsInsert['note_templates'];
 }
 
 const defaultSettings: AppSettings = {
@@ -170,6 +179,7 @@ export function useSettings() {
         const generalSettingsFallback = readGeneralSettingsFallback(user.id);
         const layoutSettingsFallback = readLayoutSettingsFallback(user.id);
         const quickRescheduleDaysThresholdFallback = readQuickRescheduleDaysThresholdFallback(user.id);
+        const localNoteTemplates = readNoteTemplates(user.id);
 
         // Load tags
         const { data: tagsData, error: tagsError } = await supabase
@@ -246,6 +256,23 @@ export function useSettings() {
           writeLayoutSettingsFallback(user.id, layoutSettings);
           persistGeneralSettingsFallback(nextGeneralSettings);
           setGeneralSettings(nextGeneralSettings);
+
+          const remoteNoteTemplates = settingsData.note_templates === undefined || settingsData.note_templates === null
+            ? null
+            : normalizeNoteTemplates(settingsData.note_templates);
+          const nextNoteTemplates = remoteNoteTemplates ?? localNoteTemplates;
+          setNoteTemplates(nextNoteTemplates);
+          writeNoteTemplates(user.id, nextNoteTemplates);
+
+          if (remoteNoteTemplates === null && !areNoteTemplatesEqual(localNoteTemplates, defaultNoteTemplates)) {
+            void upsertUserSettings(user.id, {
+              note_templates: getNoteTemplatesDatabaseValue(localNoteTemplates),
+            }).then(({ error }) => {
+              if (error) {
+                console.error('Error migrating local note templates to backend:', error);
+              }
+            });
+          }
         } else {
           const nextGeneralSettings = {
             allowReopenCompleted: generalSettingsFallback?.allowReopenCompleted ?? true,
@@ -261,9 +288,20 @@ export function useSettings() {
           };
           persistGeneralSettingsFallback(nextGeneralSettings);
           setGeneralSettings(nextGeneralSettings);
-        }
 
-        setNoteTemplates(readNoteTemplates(user.id));
+          setNoteTemplates(localNoteTemplates);
+          writeNoteTemplates(user.id, localNoteTemplates);
+
+          if (!areNoteTemplatesEqual(localNoteTemplates, defaultNoteTemplates)) {
+            void upsertUserSettings(user.id, {
+              note_templates: getNoteTemplatesDatabaseValue(localNoteTemplates),
+            }).then(({ error }) => {
+              if (error) {
+                console.error('Error migrating local note templates to backend:', error);
+              }
+            });
+          }
+        }
       } catch (error) {
         console.error('Error loading settings:', error);
       } finally {
@@ -701,10 +739,29 @@ export function useSettings() {
   }, [user, persistGeneralSettingsFallback]);
 
   const updateNoteTemplates = useCallback(async (templates: NoteTemplate[]) => {
+    if (!user) {
+      throw new Error('Missing user');
+    }
+
     const nextTemplates = templates.length > 0 ? templates : defaultNoteTemplates;
     setNoteTemplates(nextTemplates);
-    writeNoteTemplates(user?.id, nextTemplates);
-  }, [user?.id]);
+    writeNoteTemplates(user.id, nextTemplates);
+
+    try {
+      const { error } = await upsertUserSettings(user.id, {
+        note_templates: getNoteTemplatesDatabaseValue(nextTemplates),
+      });
+
+      if (error) {
+        console.error('Error updating note templates:', error);
+        throw new Error('Nao foi possivel salvar os templates.');
+      }
+    } catch (error) {
+      console.error('Error updating note templates:', error);
+      toast.error('Nao foi possivel salvar os templates.');
+      throw error;
+    }
+  }, [user]);
 
   return {
     settings,

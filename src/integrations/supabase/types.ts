@@ -226,6 +226,7 @@ export type Database = {
           mobile_layout_mode: string | null
           note_date_buttons_enabled: boolean
           note_line_spacing: string | null
+          note_templates: Json | null
           quick_reschedule_days_threshold: number
           saved_filters: Json | null
           saved_sort: Json | null
@@ -246,6 +247,7 @@ export type Database = {
           mobile_layout_mode?: string | null
           note_date_buttons_enabled?: boolean
           note_line_spacing?: string | null
+          note_templates?: Json | null
           quick_reschedule_days_threshold?: number
           saved_filters?: Json | null
           saved_sort?: Json | null
@@ -266,6 +268,7 @@ export type Database = {
           mobile_layout_mode?: string | null
           note_date_buttons_enabled?: boolean
           note_line_spacing?: string | null
+          note_templates?: Json | null
           quick_reschedule_days_threshold?: number
           saved_filters?: Json | null
           saved_sort?: Json | null
