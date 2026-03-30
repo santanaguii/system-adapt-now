@@ -400,6 +400,15 @@ export function ActivityList({
     tag: 'Por Tag',
     field: 'Por Campo',
   };
+  const availableSortOptions: SortOption[] = ['manual', 'createdAt_desc'];
+
+  if (customFields.some((field) => field.enabled && field.key === 'dueDate')) {
+    availableSortOptions.push('dueDate_asc', 'dueDate_desc');
+  }
+
+  if (customFields.some((field) => field.enabled && field.key === 'priority')) {
+    availableSortOptions.push('priority_asc', 'priority_desc');
+  }
 
   const quickActions = (activity: Activity) => (
     <>
@@ -614,18 +623,18 @@ export function ActivityList({
                       <ArrowUpDown className="h-4 w-4" />
                     </Button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuLabel>Ordenar por</DropdownMenuLabel>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuRadioGroup value={sortOption} onValueChange={(value) => onSortChange(value as SortOption)}>
-                      {Object.entries(sortLabels).map(([value, label]) => (
-                        <DropdownMenuRadioItem key={value} value={value}>
-                          {label}
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuLabel>Ordenar por</DropdownMenuLabel>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuRadioGroup value={sortOption} onValueChange={(value) => onSortChange(value as SortOption)}>
+                      {availableSortOptions.map((option) => (
+                        <DropdownMenuRadioItem key={option} value={option}>
+                          {sortLabels[option]}
                         </DropdownMenuRadioItem>
                       ))}
-                    </DropdownMenuRadioGroup>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                      </DropdownMenuRadioGroup>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button variant="ghost" size="icon" className="h-8 w-8">

@@ -64,6 +64,7 @@ const TABLET_MAX = 1024;
 
 interface SettingsPreviewState {
   allowReopenCompleted: boolean;
+  defaultSort: SortOption;
   autosaveEnabled: boolean;
   noteDateButtonsEnabled: boolean;
   quickRescheduleDaysThreshold: number;
@@ -92,7 +93,7 @@ const Index = () => {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsPreview, setSettingsPreview] = useState<SettingsPreviewState | null>(null);
-  const [sortOption, setSortOption] = useState<SortOption>('manual');
+  const [sortOverride, setSortOverride] = useState<SortOption | null>(null);
   const [pendingLineToConvert, setPendingLineToConvert] = useState<NoteLine | null>(null);
   const [showCreateDialogFromNote, setShowCreateDialogFromNote] = useState(false);
   const [selectedActivityFromNote, setSelectedActivityFromNote] = useState<Activity | null>(null);
@@ -123,9 +124,10 @@ const Index = () => {
     updateLayoutSettings,
     updateListDisplay,
     updateSavedFilters,
-    updateSavedSort,
     updateNoteTemplates,
   } = useSettings();
+  const effectiveDefaultSort = settingsPreview?.defaultSort ?? settings.defaultSort;
+  const effectiveSortOption = settingsPreview?.defaultSort ?? sortOverride ?? settings.defaultSort;
 
   const {
     activities,
@@ -135,7 +137,7 @@ const Index = () => {
     deleteActivity,
     toggleComplete,
     reorderActivities,
-  } = useActivities(sortOption, settings.customFields);
+  } = useActivities(effectiveSortOption, settings.customFields);
 
   const {
     getNote,
@@ -207,7 +209,10 @@ const Index = () => {
   }, [applySearchSelection, hasUnsavedChanges, settings.autosaveEnabled]);
 
   const handleSaveAndContinue = useCallback(async () => {
-    await saveAllPending();
+    const didSave = await saveAllPending();
+    if (!didSave) {
+      return;
+    }
     if (pendingDateChange) {
       if (pendingSearchSelection) {
         applySearchSelection(pendingSearchSelection);
@@ -376,6 +381,10 @@ const Index = () => {
   const effectiveNoteDateButtonsEnabled = settingsPreview?.noteDateButtonsEnabled ?? settings.noteDateButtonsEnabled;
   const effectiveQuickRescheduleDaysThreshold = settingsPreview?.quickRescheduleDaysThreshold ?? settings.quickRescheduleDaysThreshold;
 
+  const handleSortChange = useCallback((nextSort: SortOption) => {
+    setSortOverride(nextSort === effectiveDefaultSort ? null : nextSort);
+  }, [effectiveDefaultSort]);
+
   const handleCloseSettings = useCallback(() => {
     setSettingsPreview(null);
     setPreviewAppearance(null);
@@ -442,8 +451,8 @@ const Index = () => {
     onToggleComplete: toggleComplete,
     onReorderActivities: reorderActivities,
     onOpenSettings: () => setSettingsOpen(true),
-    sortOption,
-    onSortChange: setSortOption,
+    sortOption: effectiveSortOption,
+    onSortChange: handleSortChange,
     allowReopenCompleted: effectiveAllowReopenCompleted,
     onCreateActivityFromLine: handleOpenDetailedActivityFormFromLine,
     onOpenDetailedActivityFromLine: handleOpenDetailedActivityFormFromLine,
@@ -642,8 +651,8 @@ const Index = () => {
                     onToggleComplete={toggleComplete}
                     onReorder={reorderActivities}
                     onOpenSettings={() => setSettingsOpen(true)}
-                    sortOption={sortOption}
-                    onSortChange={setSortOption}
+                    sortOption={effectiveSortOption}
+                    onSortChange={handleSortChange}
                     allowReopenCompleted={effectiveAllowReopenCompleted}
                     showQuickRescheduleButtons={effectiveNoteDateButtonsEnabled}
                     quickRescheduleDaysThreshold={effectiveQuickRescheduleDaysThreshold}
@@ -668,8 +677,8 @@ const Index = () => {
                 onToggleComplete={toggleComplete}
                 onReorder={reorderActivities}
                 onOpenSettings={() => setSettingsOpen(true)}
-                sortOption={sortOption}
-                onSortChange={setSortOption}
+                sortOption={effectiveSortOption}
+                onSortChange={handleSortChange}
                 allowReopenCompleted={effectiveAllowReopenCompleted}
                 showQuickRescheduleButtons={effectiveNoteDateButtonsEnabled}
                 quickRescheduleDaysThreshold={effectiveQuickRescheduleDaysThreshold}
@@ -703,6 +712,7 @@ const Index = () => {
             tags={settings.tags}
             noteTemplates={settings.noteTemplates}
             allowReopenCompleted={settings.allowReopenCompleted}
+            defaultSort={settings.defaultSort}
             autosaveEnabled={settings.autosaveEnabled}
             noteDateButtonsEnabled={settings.noteDateButtonsEnabled}
             quickRescheduleDaysThreshold={settings.quickRescheduleDaysThreshold}
@@ -722,7 +732,6 @@ const Index = () => {
             onUpdateLayoutSettings={updateLayoutSettings}
             onUpdateListDisplay={updateListDisplay}
             onUpdateFilters={updateSavedFilters}
-            onUpdateSort={updateSavedSort}
             onUpdateNoteTemplates={updateNoteTemplates}
             onPreviewChange={handleSettingsPreview}
           />

@@ -297,7 +297,9 @@ export function useAppearance(options: UseAppearanceOptions = {}) {
             mobileLayoutMode: validMobileLayoutModes.has(data.mobile_layout_mode as MobileLayoutMode)
               ? data.mobile_layout_mode as MobileLayoutMode
               : (appearanceFallback?.mobileLayoutMode ?? defaultAppearance.mobileLayoutMode),
-            noteLineSpacing: parseNoteLineSpacing(data.note_line_spacing),
+            noteLineSpacing: data.note_line_spacing == null
+              ? (appearanceFallback?.noteLineSpacing ?? defaultAppearance.noteLineSpacing)
+              : parseNoteLineSpacing(data.note_line_spacing),
           };
           writeAppearanceFallback(userId, loaded);
           setAppearance(loaded);
@@ -351,11 +353,12 @@ export function useAppearance(options: UseAppearanceOptions = {}) {
 
       if (error) {
         console.error('Error saving appearance:', error);
-        toast.error('Nao foi possivel salvar a aparencia no servidor. O valor foi mantido localmente.');
+        throw new Error('Nao foi possivel salvar a aparencia no servidor. O valor foi mantido localmente.');
       }
     } catch (error) {
       console.error('Error saving appearance:', error);
       toast.error('Nao foi possivel salvar a aparencia no servidor. O valor foi mantido localmente.');
+      throw error;
     }
   }, [userId, appearance]);
 

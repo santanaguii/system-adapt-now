@@ -78,7 +78,9 @@ describe('general settings fallback', () => {
     window.localStorage.clear();
 
     writeGeneralSettingsFallback('user-1', {
+      defaultSort: 'createdAt_desc',
       allowReopenCompleted: false,
+      activityCreationMode: 'simple',
       autosaveEnabled: false,
       noteDateButtonsEnabled: false,
       quickRescheduleDaysThreshold: 6,
@@ -102,7 +104,9 @@ describe('general settings fallback', () => {
     });
 
     expect(readGeneralSettingsFallback('user-1')).toEqual({
+      defaultSort: 'createdAt_desc',
       allowReopenCompleted: false,
+      activityCreationMode: 'simple',
       autosaveEnabled: false,
       noteDateButtonsEnabled: false,
       quickRescheduleDaysThreshold: 6,

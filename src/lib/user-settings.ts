@@ -1,6 +1,6 @@
 import { supabase } from '@/integrations/supabase/client';
 import type { Json, TablesInsert } from '@/integrations/supabase/types';
-import type { ActivityListDisplaySettings, AppSettings, FilterConfig, LayoutSettings, SortConfig } from '@/types';
+import type { ActivityCreationMode, ActivityListDisplaySettings, AppSettings, FilterConfig, LayoutSettings, SortConfig, SortOption } from '@/types';
 import { defaultActivityFormLayout, normalizeActivityFormLayout } from './activity-form-layout';
 
 const QUICK_RESCHEDULE_THRESHOLD_FALLBACK_KEY = 'user-settings.quick-reschedule-days-threshold';
@@ -9,7 +9,9 @@ const GENERAL_SETTINGS_FALLBACK_KEY = 'user-settings.general';
 type UserSettingsInsert = TablesInsert<'user_settings'>;
 type CachedGeneralSettings = Pick<
   AppSettings,
+  | 'defaultSort'
   | 'allowReopenCompleted'
+  | 'activityCreationMode'
   | 'autosaveEnabled'
   | 'noteDateButtonsEnabled'
   | 'quickRescheduleDaysThreshold'
@@ -39,6 +41,17 @@ export const defaultSortConfig: SortConfig = {
   type: 'manual',
   direction: 'asc',
 };
+
+const validSortOptions = new Set<SortOption>([
+  'manual',
+  'dueDate_asc',
+  'dueDate_desc',
+  'priority_asc',
+  'priority_desc',
+  'createdAt_desc',
+  'tag',
+  'field',
+]);
 
 export const defaultLayoutSettings: LayoutSettings = {
   showTabs: true,
@@ -175,8 +188,14 @@ export function readGeneralSettingsFallback(userId?: string | null): Partial<Cac
 
     const fallback: Partial<CachedGeneralSettings> = {};
 
+    if (typeof parsedValue.defaultSort === 'string' && validSortOptions.has(parsedValue.defaultSort as SortOption)) {
+      fallback.defaultSort = parsedValue.defaultSort as SortOption;
+    }
     if (typeof parsedValue.allowReopenCompleted === 'boolean') {
       fallback.allowReopenCompleted = parsedValue.allowReopenCompleted;
+    }
+    if (parsedValue.activityCreationMode === 'simple' || parsedValue.activityCreationMode === 'detailed') {
+      fallback.activityCreationMode = parsedValue.activityCreationMode as ActivityCreationMode;
     }
     if (typeof parsedValue.autosaveEnabled === 'boolean') {
       fallback.autosaveEnabled = parsedValue.autosaveEnabled;
@@ -221,6 +240,7 @@ export function writeGeneralSettingsFallback(userId: string, settings: CachedGen
       getGeneralSettingsFallbackKey(userId),
       JSON.stringify({
         ...settings,
+        defaultSort: validSortOptions.has(settings.defaultSort) ? settings.defaultSort : 'manual',
         quickRescheduleDaysThreshold: normalizeQuickRescheduleDaysThreshold(settings.quickRescheduleDaysThreshold),
         layout: normalizeLayoutSettings(settings.layout),
         listDisplay: normalizeListDisplaySettings(settings.listDisplay),

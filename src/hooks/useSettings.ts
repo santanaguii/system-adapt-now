@@ -113,8 +113,8 @@ export function useSettings() {
   const [isLoading, setIsLoading] = useState(true);
 
   const persistGeneralSettingsFallback = useCallback((nextSettings: {
-    allowReopenCompleted: boolean;
     defaultSort: SortOption;
+    allowReopenCompleted: boolean;
     activityCreationMode: ActivityCreationMode;
     autosaveEnabled: boolean;
     noteDateButtonsEnabled: boolean;
@@ -129,7 +129,9 @@ export function useSettings() {
     }
 
     writeGeneralSettingsFallback(user.id, {
+      defaultSort: nextSettings.defaultSort,
       allowReopenCompleted: nextSettings.allowReopenCompleted,
+      activityCreationMode: nextSettings.activityCreationMode,
       autosaveEnabled: nextSettings.autosaveEnabled,
       noteDateButtonsEnabled: nextSettings.noteDateButtonsEnabled,
       quickRescheduleDaysThreshold: nextSettings.quickRescheduleDaysThreshold,
@@ -226,7 +228,7 @@ export function useSettings() {
           const nextGeneralSettings = {
             allowReopenCompleted: settingsData.allow_reopen_completed ?? generalSettingsFallback?.allowReopenCompleted ?? true,
             defaultSort: (settingsData.default_sort as SortOption) ?? defaultSettings.defaultSort,
-            activityCreationMode: 'detailed' as const,
+            activityCreationMode: (settingsData.activity_creation_mode as ActivityCreationMode) ?? defaultSettings.activityCreationMode,
             autosaveEnabled: settingsData.autosave_enabled ?? generalSettingsFallback?.autosaveEnabled ?? true,
             noteDateButtonsEnabled: settingsData.note_date_buttons_enabled ?? generalSettingsFallback?.noteDateButtonsEnabled ?? true,
             quickRescheduleDaysThreshold,
@@ -247,8 +249,8 @@ export function useSettings() {
         } else {
           const nextGeneralSettings = {
             allowReopenCompleted: generalSettingsFallback?.allowReopenCompleted ?? true,
-            defaultSort: 'manual' as const,
-            activityCreationMode: 'detailed' as const,
+            defaultSort: generalSettingsFallback?.defaultSort ?? defaultSettings.defaultSort,
+            activityCreationMode: generalSettingsFallback?.activityCreationMode ?? defaultSettings.activityCreationMode,
             autosaveEnabled: generalSettingsFallback?.autosaveEnabled ?? true,
             noteDateButtonsEnabled: generalSettingsFallback?.noteDateButtonsEnabled ?? true,
             quickRescheduleDaysThreshold: quickRescheduleDaysThresholdFallback ?? generalSettingsFallback?.quickRescheduleDaysThreshold ?? 0,
@@ -291,7 +293,9 @@ export function useSettings() {
 
   // Tag operations
   const addTag = useCallback(async (tag: Omit<Tag, 'id'>) => {
-    if (!user) return null;
+    if (!user) {
+      throw new Error('Missing user');
+    }
 
     try {
       const { data, error } = await supabase
@@ -306,8 +310,7 @@ export function useSettings() {
 
       if (error || !data) {
         console.error('Error adding tag:', error);
-        toast.error('Nao foi possivel adicionar a tag.');
-        return null;
+        throw new Error('Nao foi possivel adicionar a tag.');
       }
 
       const newTag: Tag = {
@@ -321,12 +324,14 @@ export function useSettings() {
     } catch (error) {
       console.error('Error adding tag:', error);
       toast.error('Nao foi possivel adicionar a tag.');
-      return null;
+      throw error;
     }
   }, [user]);
 
   const updateTag = useCallback(async (id: string, updates: Partial<Tag>) => {
-    if (!user) return;
+    if (!user) {
+      throw new Error('Missing user');
+    }
 
     try {
       const { error } = await supabase
@@ -337,19 +342,21 @@ export function useSettings() {
 
       if (error) {
         console.error('Error updating tag:', error);
-        toast.error('Nao foi possivel atualizar a tag.');
-        return;
+        throw new Error('Nao foi possivel atualizar a tag.');
       }
 
       setTags(prev => prev.map(t => t.id === id ? { ...t, ...updates } : t));
     } catch (error) {
       console.error('Error updating tag:', error);
       toast.error('Nao foi possivel atualizar a tag.');
+      throw error;
     }
   }, [user]);
 
   const deleteTag = useCallback(async (id: string) => {
-    if (!user) return;
+    if (!user) {
+      throw new Error('Missing user');
+    }
 
     try {
       const { error } = await supabase
@@ -360,14 +367,14 @@ export function useSettings() {
 
       if (error) {
         console.error('Error deleting tag:', error);
-        toast.error('Nao foi possivel excluir a tag.');
-        return;
+        throw new Error('Nao foi possivel excluir a tag.');
       }
 
       setTags(prev => prev.filter(t => t.id !== id));
     } catch (error) {
       console.error('Error deleting tag:', error);
       toast.error('Nao foi possivel excluir a tag.');
+      throw error;
     }
   }, [user]);
 
@@ -377,7 +384,9 @@ export function useSettings() {
 
   // Custom field operations
   const addCustomField = useCallback(async (field: Omit<CustomField, 'id'>) => {
-    if (!user) return null;
+    if (!user) {
+      throw new Error('Missing user');
+    }
 
     try {
       const { data, error } = await supabase
@@ -400,8 +409,7 @@ export function useSettings() {
 
       if (error || !data) {
         console.error('Error adding custom field:', error);
-        toast.error('Nao foi possivel adicionar o campo.');
-        return null;
+        throw new Error('Nao foi possivel adicionar o campo.');
       }
 
       const newField: CustomField = {
@@ -423,12 +431,14 @@ export function useSettings() {
     } catch (error) {
       console.error('Error adding custom field:', error);
       toast.error('Nao foi possivel adicionar o campo.');
-      return null;
+      throw error;
     }
   }, [user]);
 
   const updateCustomField = useCallback(async (id: string, updates: Partial<CustomField>) => {
-    if (!user) return;
+    if (!user) {
+      throw new Error('Missing user');
+    }
 
     try {
       // Convert to DB format
@@ -452,19 +462,21 @@ export function useSettings() {
 
       if (error) {
         console.error('Error updating custom field:', error);
-        toast.error('Nao foi possivel atualizar o campo.');
-        return;
+        throw new Error('Nao foi possivel atualizar o campo.');
       }
 
       setCustomFields(prev => prev.map(f => f.id === id ? { ...f, ...updates } : f));
     } catch (error) {
       console.error('Error updating custom field:', error);
       toast.error('Nao foi possivel atualizar o campo.');
+      throw error;
     }
   }, [user]);
 
   const deleteCustomField = useCallback(async (id: string) => {
-    if (!user) return;
+    if (!user) {
+      throw new Error('Missing user');
+    }
 
     try {
       const { error } = await supabase
@@ -475,14 +487,14 @@ export function useSettings() {
 
       if (error) {
         console.error('Error deleting custom field:', error);
-        toast.error('Nao foi possivel excluir o campo.');
-        return;
+        throw new Error('Nao foi possivel excluir o campo.');
       }
 
       setCustomFields(prev => prev.filter(f => f.id !== id));
     } catch (error) {
       console.error('Error deleting custom field:', error);
       toast.error('Nao foi possivel excluir o campo.');
+      throw error;
     }
   }, [user]);
 
@@ -512,7 +524,9 @@ export function useSettings() {
 
   // General settings operations
   const updateGeneralSettings = useCallback(async (updates: Partial<Pick<AppSettings, 'allowReopenCompleted' | 'defaultSort' | 'activityCreationMode' | 'autosaveEnabled' | 'noteDateButtonsEnabled' | 'quickRescheduleDaysThreshold'>>) => {
-    if (!user) return;
+    if (!user) {
+      throw new Error('Missing user');
+    }
 
     const normalizedUpdates = updates.quickRescheduleDaysThreshold === undefined
       ? updates
@@ -546,17 +560,20 @@ export function useSettings() {
 
       if (error) {
         console.error('Error updating general settings:', error);
-        toast.error('Nao foi possivel salvar as configuracoes gerais.');
+        throw new Error('Nao foi possivel salvar as configuracoes gerais.');
       }
     } catch (error) {
       console.error('Error updating general settings:', error);
       toast.error('Nao foi possivel salvar as configuracoes gerais.');
+      throw error;
     }
   }, [user, persistGeneralSettingsFallback]);
 
   // List display settings operations
   const updateListDisplay = useCallback(async (updates: Partial<ActivityListDisplaySettings>) => {
-    if (!user) return;
+    if (!user) {
+      throw new Error('Missing user');
+    }
 
     // Update local state (optimistic)
     setGeneralSettings(prev => {
@@ -579,16 +596,19 @@ export function useSettings() {
 
       if (error) {
         console.error('Error updating list display settings:', error);
-        toast.error('Nao foi possivel salvar a configuracao da lista.');
+        throw new Error('Nao foi possivel salvar a configuracao da lista.');
       }
     } catch (error) {
       console.error('Error updating list display settings:', error);
       toast.error('Nao foi possivel salvar a configuracao da lista.');
+      throw error;
     }
   }, [user, generalSettings.listDisplay, customFields, persistGeneralSettingsFallback]);
 
   const updateLayoutSettings = useCallback(async (updates: Partial<LayoutSettings>) => {
-    if (!user) return;
+    if (!user) {
+      throw new Error('Missing user');
+    }
 
     const nextLayoutSettings = normalizeLayoutSettings({
       ...generalSettings.layout,
@@ -613,15 +633,20 @@ export function useSettings() {
 
       if (error) {
         console.error('Error updating layout settings:', error);
+        throw new Error('Nao foi possivel salvar a configuracao do layout.');
       }
     } catch (error) {
       console.error('Error updating layout settings:', error);
+      toast.error('Nao foi possivel salvar a configuracao do layout.');
+      throw error;
     }
   }, [user, generalSettings, persistGeneralSettingsFallback]);
 
   // Saved filters operations
   const updateSavedFilters = useCallback(async (filters: FilterConfig[]) => {
-    if (!user) return;
+    if (!user) {
+      throw new Error('Missing user');
+    }
 
     // Update local state (optimistic)
     setGeneralSettings(prev => {
@@ -637,17 +662,20 @@ export function useSettings() {
 
       if (error) {
         console.error('Error updating saved filters:', error);
-        toast.error('Nao foi possivel salvar os filtros.');
+        throw new Error('Nao foi possivel salvar os filtros.');
       }
     } catch (error) {
       console.error('Error updating saved filters:', error);
       toast.error('Nao foi possivel salvar os filtros.');
+      throw error;
     }
   }, [user, persistGeneralSettingsFallback]);
 
   // Saved sort operations
   const updateSavedSort = useCallback(async (sort: SortConfig) => {
-    if (!user) return;
+    if (!user) {
+      throw new Error('Missing user');
+    }
 
     // Update local state (optimistic)
     setGeneralSettings(prev => {
@@ -663,11 +691,12 @@ export function useSettings() {
 
       if (error) {
         console.error('Error updating saved sort:', error);
-        toast.error('Nao foi possivel salvar a ordenacao.');
+        throw new Error('Nao foi possivel salvar a ordenacao.');
       }
     } catch (error) {
       console.error('Error updating saved sort:', error);
       toast.error('Nao foi possivel salvar a ordenacao.');
+      throw error;
     }
   }, [user, persistGeneralSettingsFallback]);
 

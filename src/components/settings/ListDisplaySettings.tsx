@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { CustomField, ActivityListDisplaySettings, Tag, FilterConfig, SortConfig } from '@/types';
+import { useMemo, useState } from 'react';
+import { CustomField, ActivityListDisplaySettings, Tag, FilterConfig, SortOption } from '@/types';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Separator } from '@/components/ui/separator';
@@ -14,11 +14,22 @@ interface ListDisplaySettingsProps {
   tags: Tag[];
   listDisplay: ActivityListDisplaySettings;
   savedFilters: FilterConfig[];
-  savedSort: SortConfig;
+  defaultSort: SortOption;
   onUpdateListDisplay: (updates: Partial<ActivityListDisplaySettings>) => void;
   onUpdateFilters: (filters: FilterConfig[]) => void;
-  onUpdateSort: (sort: SortConfig) => void;
+  onUpdateDefaultSort: (sort: SortOption) => void;
 }
+
+const sortOptionLabels: Record<SortOption, string> = {
+  manual: 'Manual',
+  dueDate_asc: 'Prazo (crescente)',
+  dueDate_desc: 'Prazo (decrescente)',
+  priority_asc: 'Prioridade (alta primeiro)',
+  priority_desc: 'Prioridade (baixa primeiro)',
+  createdAt_desc: 'Mais recentes',
+  tag: 'Por tag',
+  field: 'Por campo',
+};
 
 const operatorLabels: Record<FilterConfig['operator'], string> = {
   equals: 'Igual a',
@@ -58,10 +69,10 @@ export function ListDisplaySettingsTab({
   tags,
   listDisplay,
   savedFilters,
-  savedSort,
+  defaultSort,
   onUpdateListDisplay,
   onUpdateFilters,
-  onUpdateSort,
+  onUpdateDefaultSort,
 }: ListDisplaySettingsProps) {
   const [newFilter, setNewFilter] = useState<Partial<FilterConfig>>({});
 
@@ -105,6 +116,19 @@ export function ListDisplaySettingsTab({
   const availableOperators = selectedField
     ? getOperatorsForFieldType(selectedField.type)
     : ['equals', 'contains', 'isEmpty', 'isNotEmpty'] as FilterConfig['operator'][];
+  const defaultSortOptions = useMemo(() => {
+    const options: SortOption[] = ['manual', 'createdAt_desc'];
+
+    if (dueDateFieldEnabled) {
+      options.push('dueDate_asc', 'dueDate_desc');
+    }
+
+    if (priorityFieldEnabled) {
+      options.push('priority_asc', 'priority_desc');
+    }
+
+    return options;
+  }, [dueDateFieldEnabled, priorityFieldEnabled]);
 
   const visibilityItems = [
     {
@@ -180,49 +204,23 @@ export function ListDisplaySettingsTab({
       <div className="space-y-4">
         <h3 className="text-base font-medium">Ordenacao Padrao</h3>
         <p className="text-sm text-muted-foreground">
-          Configure a ordenacao padrao das atividades.
+          Escolha a ordenacao inicial usada pela lista de atividades.
         </p>
 
-        <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-2">
-            <Label>Ordenar por</Label>
-            <Select
-              value={savedSort.type}
-              onValueChange={(value) => onUpdateSort({ ...savedSort, type: value as SortConfig['type'] })}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="manual">Manual</SelectItem>
-                <SelectItem value="createdAt">Data de criacao</SelectItem>
-                {enabledFields
-                  .filter((field) => ['date', 'datetime', 'number', 'currency', 'single_select'].includes(field.type))
-                  .map((field) => (
-                    <SelectItem key={field.id} value={`field:${field.id}`}>
-                      {field.name}
-                    </SelectItem>
-                  ))}
-                {tags.length > 0 && <SelectItem value="tag">Por tag</SelectItem>}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-2">
-            <Label>Direcao</Label>
-            <Select
-              value={savedSort.direction}
-              onValueChange={(value) => onUpdateSort({ ...savedSort, direction: value as 'asc' | 'desc' })}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="asc">Crescente</SelectItem>
-                <SelectItem value="desc">Decrescente</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+        <div className="space-y-2">
+          <Label>Ordenar por</Label>
+          <Select value={defaultSort} onValueChange={(value) => onUpdateDefaultSort(value as SortOption)}>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {defaultSortOptions.map((option) => (
+                <SelectItem key={option} value={option}>
+                  {sortOptionLabels[option]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
       </div>
 

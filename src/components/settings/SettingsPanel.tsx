@@ -7,16 +7,26 @@ import {
   FilterConfig,
   LayoutSettings,
   NoteTemplate,
+  SortOption,
   SortConfig,
   Tag,
 } from '@/types';
 import {
   Dialog,
-  DialogClose,
   DialogContent,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -35,6 +45,7 @@ import { isProtectedCustomField, sanitizeListDisplayForFields } from '@/lib/cust
 
 export interface SettingsPanelPreview {
   allowReopenCompleted: boolean;
+  defaultSort: SortOption;
   autosaveEnabled: boolean;
   noteDateButtonsEnabled: boolean;
   quickRescheduleDaysThreshold: number;
@@ -55,6 +66,7 @@ interface SettingsPanelProps {
   tags: Tag[];
   noteTemplates: NoteTemplate[];
   allowReopenCompleted: boolean;
+  defaultSort: SortOption;
   autosaveEnabled: boolean;
   noteDateButtonsEnabled: boolean;
   quickRescheduleDaysThreshold: number;
@@ -71,6 +83,7 @@ interface SettingsPanelProps {
   onDeleteTag: (id: string) => Promise<void> | void;
   onUpdateGeneralSettings: (updates: {
     allowReopenCompleted?: boolean;
+    defaultSort?: SortOption;
     autosaveEnabled?: boolean;
     noteDateButtonsEnabled?: boolean;
     quickRescheduleDaysThreshold?: number;
@@ -79,7 +92,6 @@ interface SettingsPanelProps {
   onUpdateLayoutSettings: (updates: Partial<LayoutSettings>) => Promise<void> | void;
   onUpdateListDisplay: (updates: Partial<ActivityListDisplaySettings>) => Promise<void> | void;
   onUpdateFilters: (filters: FilterConfig[]) => Promise<void> | void;
-  onUpdateSort: (sort: SortConfig) => Promise<void> | void;
   onUpdateNoteTemplates: (templates: NoteTemplate[]) => Promise<void> | void;
   onPreviewChange?: (preview: SettingsPanelPreview) => void;
 }
@@ -164,6 +176,7 @@ export function SettingsPanel({
   tags,
   noteTemplates,
   allowReopenCompleted,
+  defaultSort,
   autosaveEnabled,
   noteDateButtonsEnabled,
   quickRescheduleDaysThreshold,
@@ -183,11 +196,11 @@ export function SettingsPanel({
   onUpdateLayoutSettings,
   onUpdateListDisplay,
   onUpdateFilters,
-  onUpdateSort,
   onUpdateNoteTemplates,
   onPreviewChange,
 }: SettingsPanelProps) {
   const [draftAllowReopenCompleted, setDraftAllowReopenCompleted] = useState(allowReopenCompleted);
+  const [draftDefaultSort, setDraftDefaultSort] = useState<SortOption>(defaultSort);
   const [draftAutosaveEnabled, setDraftAutosaveEnabled] = useState(autosaveEnabled);
   const [draftNoteDateButtonsEnabled, setDraftNoteDateButtonsEnabled] = useState(noteDateButtonsEnabled);
   const [draftQuickRescheduleDaysThreshold, setDraftQuickRescheduleDaysThreshold] = useState(quickRescheduleDaysThreshold);
@@ -195,7 +208,6 @@ export function SettingsPanel({
   const [draftLayout, setDraftLayout] = useState<LayoutSettings>(layout);
   const [draftListDisplay, setDraftListDisplay] = useState<ActivityListDisplaySettings>(listDisplay);
   const [draftSavedFilters, setDraftSavedFilters] = useState<FilterConfig[]>(savedFilters);
-  const [draftSavedSort, setDraftSavedSort] = useState<SortConfig>(savedSort);
   const [draftFields, setDraftFields] = useState<CustomField[]>(customFields);
   const [draftTags, setDraftTags] = useState<Tag[]>(tags);
   const [draftNoteTemplates, setDraftNoteTemplates] = useState<NoteTemplate[]>(noteTemplates);
@@ -206,6 +218,7 @@ export function SettingsPanel({
   const [newTagName, setNewTagName] = useState('');
   const [newTagColor, setNewTagColor] = useState(tagColors[0]);
   const [isSaving, setIsSaving] = useState(false);
+  const [showUnsavedCloseDialog, setShowUnsavedCloseDialog] = useState(false);
 
   useEffect(() => {
     if (!isOpen) {
@@ -213,6 +226,7 @@ export function SettingsPanel({
     }
 
     setDraftAllowReopenCompleted(allowReopenCompleted);
+    setDraftDefaultSort(defaultSort);
     setDraftAutosaveEnabled(autosaveEnabled);
     setDraftNoteDateButtonsEnabled(noteDateButtonsEnabled);
     setDraftQuickRescheduleDaysThreshold(quickRescheduleDaysThreshold);
@@ -220,7 +234,6 @@ export function SettingsPanel({
     setDraftLayout(layout);
     setDraftListDisplay(listDisplay);
     setDraftSavedFilters(savedFilters);
-    setDraftSavedSort(savedSort);
     setDraftFields([...customFields].sort((a, b) => a.order - b.order));
     setDraftTags(tags);
     setDraftNoteTemplates(noteTemplates);
@@ -231,10 +244,12 @@ export function SettingsPanel({
     setNewTagName('');
     setNewTagColor(tagColors[0]);
     setIsSaving(false);
+    setShowUnsavedCloseDialog(false);
   }, [
     allowReopenCompleted,
     appearance,
     autosaveEnabled,
+    defaultSort,
     noteDateButtonsEnabled,
     quickRescheduleDaysThreshold,
     customFields,
@@ -242,7 +257,6 @@ export function SettingsPanel({
     layout,
     listDisplay,
     savedFilters,
-    savedSort,
     tags,
     noteTemplates,
   ]);
@@ -263,6 +277,7 @@ export function SettingsPanel({
 
     onPreviewChange?.({
       allowReopenCompleted: draftAllowReopenCompleted,
+      defaultSort: draftDefaultSort,
       autosaveEnabled: draftAutosaveEnabled,
       noteDateButtonsEnabled: draftNoteDateButtonsEnabled,
       quickRescheduleDaysThreshold: draftQuickRescheduleDaysThreshold,
@@ -270,7 +285,7 @@ export function SettingsPanel({
       layout: draftLayout,
       listDisplay: sanitizedDraftListDisplay,
       savedFilters: draftSavedFilters,
-      savedSort: draftSavedSort,
+      savedSort,
       customFields: orderedFields,
       tags: draftTags,
       noteTemplates: draftNoteTemplates,
@@ -279,16 +294,17 @@ export function SettingsPanel({
     draftAllowReopenCompleted,
     draftAppearance,
     draftAutosaveEnabled,
+    draftDefaultSort,
     draftLayout,
     draftNoteDateButtonsEnabled,
     draftQuickRescheduleDaysThreshold,
     draftNoteTemplates,
     draftSavedFilters,
-    draftSavedSort,
     draftTags,
     isOpen,
     onPreviewChange,
     orderedFields,
+    savedSort,
     sanitizedDraftListDisplay,
   ]);
 
@@ -336,6 +352,7 @@ export function SettingsPanel({
   const hasChanges = useMemo(() => {
     return (
       draftAllowReopenCompleted !== allowReopenCompleted ||
+      draftDefaultSort !== defaultSort ||
       draftAutosaveEnabled !== autosaveEnabled ||
       draftNoteDateButtonsEnabled !== noteDateButtonsEnabled ||
       draftQuickRescheduleDaysThreshold !== quickRescheduleDaysThreshold ||
@@ -343,7 +360,6 @@ export function SettingsPanel({
       shallowChanged(draftLayout, layout) ||
       shallowChanged(sanitizedDraftListDisplay, listDisplay) ||
       shallowChanged(draftSavedFilters, savedFilters) ||
-      shallowChanged(draftSavedSort, savedSort) ||
       shallowChanged(orderedFields, [...customFields].sort((a, b) => a.order - b.order)) ||
       shallowChanged(draftTags, tags) ||
       shallowChanged(draftNoteTemplates, noteTemplates)
@@ -355,14 +371,15 @@ export function SettingsPanel({
     noteDateButtonsEnabled,
     quickRescheduleDaysThreshold,
     customFields,
+    defaultSort,
     draftAllowReopenCompleted,
     draftAppearance,
     draftAutosaveEnabled,
+    draftDefaultSort,
     draftLayout,
     draftNoteDateButtonsEnabled,
     draftQuickRescheduleDaysThreshold,
     draftSavedFilters,
-    draftSavedSort,
     draftTags,
     draftNoteTemplates,
     layout,
@@ -370,10 +387,41 @@ export function SettingsPanel({
     orderedFields,
     noteTemplates,
     savedFilters,
-    savedSort,
     sanitizedDraftListDisplay,
     tags,
   ]);
+
+  useEffect(() => {
+    if (!isOpen || !hasChanges) {
+      return;
+    }
+
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [hasChanges, isOpen]);
+
+  const closePanel = () => {
+    setShowUnsavedCloseDialog(false);
+    onClose();
+  };
+
+  const handleRequestClose = () => {
+    if (isSaving) {
+      return;
+    }
+
+    if (hasChanges) {
+      setShowUnsavedCloseDialog(true);
+      return;
+    }
+
+    closePanel();
+  };
 
   const handleSave = async () => {
     setIsSaving(true);
@@ -381,6 +429,7 @@ export function SettingsPanel({
     try {
       if (
         draftAllowReopenCompleted !== allowReopenCompleted ||
+        draftDefaultSort !== defaultSort ||
         draftAutosaveEnabled !== autosaveEnabled ||
         draftNoteDateButtonsEnabled !== noteDateButtonsEnabled ||
         draftQuickRescheduleDaysThreshold !== quickRescheduleDaysThreshold
@@ -388,6 +437,7 @@ export function SettingsPanel({
         await Promise.resolve(
           onUpdateGeneralSettings({
             allowReopenCompleted: draftAllowReopenCompleted,
+            defaultSort: draftDefaultSort,
             autosaveEnabled: draftAutosaveEnabled,
             noteDateButtonsEnabled: draftNoteDateButtonsEnabled,
             quickRescheduleDaysThreshold: draftQuickRescheduleDaysThreshold,
@@ -405,10 +455,6 @@ export function SettingsPanel({
 
       if (shallowChanged(draftSavedFilters, savedFilters)) {
         await Promise.resolve(onUpdateFilters(draftSavedFilters));
-      }
-
-      if (shallowChanged(draftSavedSort, savedSort)) {
-        await Promise.resolve(onUpdateSort(draftSavedSort));
       }
 
       if (shallowChanged(draftNoteTemplates, noteTemplates)) {
@@ -492,39 +538,49 @@ export function SettingsPanel({
         }
       }
 
-      onClose();
+      closePanel();
+      return true;
+    } catch (error) {
+      console.error('Error saving settings:', error);
+      return false;
     } finally {
       setIsSaving(false);
     }
   };
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent hideCloseButton className="flex h-[min(88vh,960px)] w-[min(96vw,42rem)] max-w-[min(96vw,42rem)] flex-col overflow-hidden gap-0 p-0">
-        <DialogHeader className="shrink-0 space-y-0 border-b px-4 py-3">
-          <div className="flex items-center justify-between gap-3">
-            <DialogTitle className="min-w-0 flex-1 truncate text-base">Configuracoes</DialogTitle>
-            <DialogClose asChild>
-              <Button type="button" variant="ghost" size="icon" className="h-7 w-7">
+    <>
+      <Dialog
+        open={isOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            handleRequestClose();
+          }
+        }}
+      >
+        <DialogContent hideCloseButton className="flex h-[min(88vh,960px)] w-[min(96vw,42rem)] max-w-[min(96vw,42rem)] flex-col overflow-hidden gap-0 p-0">
+          <DialogHeader className="shrink-0 space-y-0 border-b px-4 py-3">
+            <div className="flex items-center justify-between gap-3">
+              <DialogTitle className="min-w-0 flex-1 truncate text-base">Configuracoes</DialogTitle>
+              <Button type="button" variant="ghost" size="icon" className="h-7 w-7" onClick={handleRequestClose} disabled={isSaving}>
                 <X className="h-4 w-4" />
               </Button>
-            </DialogClose>
-          </div>
-        </DialogHeader>
+            </div>
+          </DialogHeader>
 
-        <div className="flex-1 min-h-0 overflow-y-auto px-4 pb-3 pt-2">
-          <Tabs defaultValue="general" className="flex min-h-full flex-col gap-4">
-            <TabsList className="grid h-auto w-full shrink-0 grid-cols-2 gap-1 rounded-xl border bg-muted/20 p-1 sm:grid-cols-5">
-              <TabsTrigger className="whitespace-normal px-2 py-2 text-xs sm:text-sm" value="general">Geral</TabsTrigger>
-              <TabsTrigger className="whitespace-normal px-2 py-2 text-xs sm:text-sm" value="layout">Layout</TabsTrigger>
-              <TabsTrigger className="whitespace-normal px-2 py-2 text-xs sm:text-sm" value="list">Lista</TabsTrigger>
-              <TabsTrigger className="whitespace-normal px-2 py-2 text-xs sm:text-sm" value="appearance">Aparencia</TabsTrigger>
-              <TabsTrigger className="whitespace-normal px-2 py-2 text-xs sm:text-sm" value="notes">Notas</TabsTrigger>
-              <TabsTrigger className="whitespace-normal px-2 py-2 text-xs sm:text-sm" value="shortcuts">Atalhos</TabsTrigger>
-              <TabsTrigger className="whitespace-normal px-2 py-2 text-xs sm:text-sm" value="form">Formulario</TabsTrigger>
-              <TabsTrigger className="whitespace-normal px-2 py-2 text-xs sm:text-sm" value="fields">Campos</TabsTrigger>
-              <TabsTrigger className="whitespace-normal px-2 py-2 text-xs sm:text-sm" value="tags">Tags</TabsTrigger>
-            </TabsList>
+          <div className="flex-1 min-h-0 overflow-y-auto px-4 pb-3 pt-2">
+            <Tabs defaultValue="general" className="flex min-h-full flex-col gap-4">
+              <TabsList className="grid h-auto w-full shrink-0 grid-cols-2 gap-1 rounded-xl border bg-muted/20 p-1 sm:grid-cols-5">
+                <TabsTrigger className="whitespace-normal px-2 py-2 text-xs sm:text-sm" value="general">Geral</TabsTrigger>
+                <TabsTrigger className="whitespace-normal px-2 py-2 text-xs sm:text-sm" value="layout">Layout</TabsTrigger>
+                <TabsTrigger className="whitespace-normal px-2 py-2 text-xs sm:text-sm" value="list">Lista</TabsTrigger>
+                <TabsTrigger className="whitespace-normal px-2 py-2 text-xs sm:text-sm" value="appearance">Aparencia</TabsTrigger>
+                <TabsTrigger className="whitespace-normal px-2 py-2 text-xs sm:text-sm" value="notes">Notas</TabsTrigger>
+                <TabsTrigger className="whitespace-normal px-2 py-2 text-xs sm:text-sm" value="shortcuts">Atalhos</TabsTrigger>
+                <TabsTrigger className="whitespace-normal px-2 py-2 text-xs sm:text-sm" value="form">Formulario</TabsTrigger>
+                <TabsTrigger className="whitespace-normal px-2 py-2 text-xs sm:text-sm" value="fields">Campos</TabsTrigger>
+                <TabsTrigger className="whitespace-normal px-2 py-2 text-xs sm:text-sm" value="tags">Tags</TabsTrigger>
+              </TabsList>
 
             <TabsContent value="general" className="mt-0 space-y-6">
               <div className="space-y-4">
@@ -586,10 +642,10 @@ export function SettingsPanel({
                 tags={draftTags}
                 listDisplay={sanitizedDraftListDisplay}
                 savedFilters={draftSavedFilters}
-                savedSort={draftSavedSort}
+                defaultSort={draftDefaultSort}
                 onUpdateListDisplay={(updates) => setDraftListDisplay((prev) => ({ ...prev, ...updates }))}
                 onUpdateFilters={setDraftSavedFilters}
-                onUpdateSort={setDraftSavedSort}
+                onUpdateDefaultSort={setDraftDefaultSort}
               />
             </TabsContent>
 
@@ -801,7 +857,7 @@ export function SettingsPanel({
 
         <div className="shrink-0 border-t px-4 py-3">
           <div className="flex justify-end gap-2">
-            <Button type="button" variant="outline" onClick={onClose}>
+            <Button type="button" variant="outline" onClick={handleRequestClose} disabled={isSaving}>
               Cancelar
             </Button>
             <Button type="button" onClick={() => void handleSave()} disabled={!hasChanges || isSaving}>
@@ -809,7 +865,28 @@ export function SettingsPanel({
             </Button>
           </div>
         </div>
-      </DialogContent>
-    </Dialog>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={showUnsavedCloseDialog} onOpenChange={setShowUnsavedCloseDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Alteracoes locais nao salvas</AlertDialogTitle>
+            <AlertDialogDescription>
+              Existem configuracoes alteradas apenas localmente. Salve antes de fechar ou descarte para sair sem manter essas mudancas.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="flex-col gap-2 sm:flex-row">
+            <AlertDialogCancel disabled={isSaving}>Continuar editando</AlertDialogCancel>
+            <Button variant="outline" onClick={closePanel} disabled={isSaving}>
+              Descartar e fechar
+            </Button>
+            <AlertDialogAction onClick={() => void handleSave()} disabled={isSaving}>
+              Salvar e fechar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }

@@ -571,10 +571,10 @@ export function useNotes(autosaveEnabled: boolean = true) {
 
   // Manual save function
   const saveAllPending = useCallback(async () => {
-    if (!user) return;
+    if (!user) return false;
 
     const pendingSaves = Array.from(pendingSavesRef.current.values());
-    if (pendingSaves.length === 0 && !hasUnsavedChanges) return;
+    if (pendingSaves.length === 0 && !hasUnsavedChanges) return true;
 
     // Also include current notes that may not be in pending
     const notesToSave = pendingSaves.length > 0 ? pendingSaves : notes.filter(n => n.lines.some(l => l.content.trim() !== ''));
@@ -586,7 +586,7 @@ export function useNotes(autosaveEnabled: boolean = true) {
     setSaveStatus('saving');
     pendingSavesRef.current = new Map(notesToSave.map((note) => [note.date, note]));
 
-    await flushPendingSaves();
+    return flushPendingSaves();
   }, [user, notes, hasUnsavedChanges, flushPendingSaves]);
 
   // Discard all pending changes

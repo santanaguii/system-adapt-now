@@ -9,6 +9,28 @@ export interface User {
   createdAt: Date;
 }
 
+function clearSupabaseStorage() {
+  Object.keys(localStorage).forEach((key) => {
+    if (key.startsWith('sb-')) {
+      localStorage.removeItem(key);
+    }
+  });
+}
+
+function shouldClearSupabaseSession(error: unknown) {
+  if (!error || typeof error !== 'object' || !('message' in error)) {
+    return false;
+  }
+
+  const message = typeof error.message === 'string' ? error.message.toLowerCase() : '';
+  return (
+    message.includes('refresh token') ||
+    message.includes('invalid token') ||
+    message.includes('invalid jwt') ||
+    message.includes('jwt expired')
+  );
+}
+
 // Simple hash function for security answer (same as before)
 async function hashString(str: string): Promise<string> {
   const encoder = new TextEncoder();
@@ -249,13 +271,10 @@ export function useAuth() {
         ]) as Awaited<ReturnType<typeof supabase.auth.getSession>>;
         
       if (error) {
-        console.error('Session error, clearing auth:', error);
-        // Limpar localStorage diretamente para evitar travamento
-        Object.keys(localStorage).forEach(key => {
-          if (key.startsWith('sb-')) {
-            localStorage.removeItem(key);
-          }
-        });
+        console.error('Session error during auth initialization:', error);
+        if (shouldClearSupabaseSession(error)) {
+          clearSupabaseStorage();
+        }
         if (isMounted) setUser(null);
         return;
       }
@@ -266,12 +285,9 @@ export function useAuth() {
         }
     } catch (error) {
       console.error('Auth initialization failed:', error);
-      // Limpar localStorage diretamente (mais seguro que signOut que pode travar)
-      Object.keys(localStorage).forEach(key => {
-        if (key.startsWith('sb-')) {
-          localStorage.removeItem(key);
-        }
-      });
+      if (shouldClearSupabaseSession(error)) {
+        clearSupabaseStorage();
+      }
       if (isMounted) setUser(null);
     } finally {
         if (isMounted) setIsLoading(false);
