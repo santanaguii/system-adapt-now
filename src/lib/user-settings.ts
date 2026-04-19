@@ -1,6 +1,6 @@
 import { supabase } from '@/integrations/supabase/client';
 import type { Json, TablesInsert } from '@/integrations/supabase/types';
-import type { ActivityCreationMode, ActivityListDisplaySettings, AppSettings, FilterConfig, LayoutSettings, SortConfig, SortOption } from '@/types';
+import type { ActivityCreationMode, ActivityListDisplaySettings, AppSettings, AppVisualMode, FilterConfig, LayoutSettings, SortConfig, SortOption } from '@/types';
 import { defaultActivityFormLayout, normalizeActivityFormLayout } from './activity-form-layout';
 
 const QUICK_RESCHEDULE_THRESHOLD_FALLBACK_KEY = 'user-settings.quick-reschedule-days-threshold';
@@ -10,6 +10,7 @@ type UserSettingsInsert = TablesInsert<'user_settings'>;
 type CachedGeneralSettings = Pick<
   AppSettings,
   | 'defaultSort'
+  | 'appVisualMode'
   | 'allowReopenCompleted'
   | 'activityCreationMode'
   | 'autosaveEnabled'
@@ -52,6 +53,7 @@ const validSortOptions = new Set<SortOption>([
   'tag',
   'field',
 ]);
+const validAppVisualModes = new Set<AppVisualMode>(['current', 'new']);
 
 export const defaultLayoutSettings: LayoutSettings = {
   showTabs: true,
@@ -191,6 +193,9 @@ export function readGeneralSettingsFallback(userId?: string | null): Partial<Cac
     if (typeof parsedValue.defaultSort === 'string' && validSortOptions.has(parsedValue.defaultSort as SortOption)) {
       fallback.defaultSort = parsedValue.defaultSort as SortOption;
     }
+    if (typeof parsedValue.appVisualMode === 'string' && validAppVisualModes.has(parsedValue.appVisualMode as AppVisualMode)) {
+      fallback.appVisualMode = parsedValue.appVisualMode as AppVisualMode;
+    }
     if (typeof parsedValue.allowReopenCompleted === 'boolean') {
       fallback.allowReopenCompleted = parsedValue.allowReopenCompleted;
     }
@@ -241,6 +246,7 @@ export function writeGeneralSettingsFallback(userId: string, settings: CachedGen
       JSON.stringify({
         ...settings,
         defaultSort: validSortOptions.has(settings.defaultSort) ? settings.defaultSort : 'manual',
+        appVisualMode: validAppVisualModes.has(settings.appVisualMode) ? settings.appVisualMode : 'current',
         quickRescheduleDaysThreshold: normalizeQuickRescheduleDaysThreshold(settings.quickRescheduleDaysThreshold),
         layout: normalizeLayoutSettings(settings.layout),
         listDisplay: normalizeListDisplaySettings(settings.listDisplay),
@@ -314,6 +320,7 @@ export function normalizeLayoutSettings(layoutSettings: Partial<LayoutSettings> 
 export function buildDefaultUserSettings(userId: string): TablesInsert<'user_settings'> {
   return {
     user_id: userId,
+    app_visual_mode: 'current',
     allow_reopen_completed: true,
     default_sort: 'manual',
     activity_creation_mode: 'detailed',

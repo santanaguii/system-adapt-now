@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import type { Json, TablesInsert } from '@/integrations/supabase/types';
-import { AppSettings, CustomField, Tag, SortOption, ActivityCreationMode, ActivityListDisplaySettings, FilterConfig, SortConfig, NoteTemplate, LayoutSettings } from '@/types';
+import { AppSettings, AppVisualMode, CustomField, Tag, SortOption, ActivityCreationMode, ActivityListDisplaySettings, FilterConfig, SortConfig, NoteTemplate, LayoutSettings } from '@/types';
 import { useAuthContext } from '@/contexts/AuthContext';
 import {
   defaultLayoutSettings,
@@ -48,6 +48,7 @@ interface CustomFieldRow {
 interface UserSettingsRow {
   id: string;
   user_id: string;
+  app_visual_mode?: string | null;
   allow_reopen_completed: boolean;
   default_sort: string;
   activity_creation_mode: string;
@@ -79,6 +80,7 @@ const defaultSettings: AppSettings = {
   customFields: [],
   tags: [],
   noteTemplates: defaultNoteTemplates,
+  appVisualMode: 'current',
   allowReopenCompleted: true,
   defaultSort: 'manual',
   activityCreationMode: 'detailed',
@@ -98,6 +100,7 @@ export function useSettings() {
   const [noteTemplates, setNoteTemplates] = useState<NoteTemplate[]>(defaultNoteTemplates);
   const [generalSettings, setGeneralSettings] = useState<{
     allowReopenCompleted: boolean;
+    appVisualMode: AppVisualMode;
     defaultSort: SortOption;
     activityCreationMode: ActivityCreationMode;
     autosaveEnabled: boolean;
@@ -109,6 +112,7 @@ export function useSettings() {
     savedSort: SortConfig;
   }>({
     allowReopenCompleted: true,
+    appVisualMode: 'current',
     defaultSort: 'manual',
     activityCreationMode: 'detailed',
     autosaveEnabled: true,
@@ -123,6 +127,7 @@ export function useSettings() {
 
   const persistGeneralSettingsFallback = useCallback((nextSettings: {
     defaultSort: SortOption;
+    appVisualMode: AppVisualMode;
     allowReopenCompleted: boolean;
     activityCreationMode: ActivityCreationMode;
     autosaveEnabled: boolean;
@@ -139,6 +144,7 @@ export function useSettings() {
 
     writeGeneralSettingsFallback(user.id, {
       defaultSort: nextSettings.defaultSort,
+      appVisualMode: nextSettings.appVisualMode,
       allowReopenCompleted: nextSettings.allowReopenCompleted,
       activityCreationMode: nextSettings.activityCreationMode,
       autosaveEnabled: nextSettings.autosaveEnabled,
@@ -159,6 +165,7 @@ export function useSettings() {
       setNoteTemplates(defaultNoteTemplates);
       setGeneralSettings({
         allowReopenCompleted: true,
+        appVisualMode: 'current',
         defaultSort: 'manual',
         activityCreationMode: 'detailed',
         autosaveEnabled: true,
@@ -237,6 +244,9 @@ export function useSettings() {
               : normalizeLayoutSettings(settingsData.layout_settings as Partial<LayoutSettings> | null);
           const nextGeneralSettings = {
             allowReopenCompleted: settingsData.allow_reopen_completed ?? generalSettingsFallback?.allowReopenCompleted ?? true,
+            appVisualMode: settingsData.app_visual_mode === 'new'
+              ? 'new'
+              : (generalSettingsFallback?.appVisualMode ?? defaultSettings.appVisualMode),
             defaultSort: (settingsData.default_sort as SortOption) ?? defaultSettings.defaultSort,
             activityCreationMode: (settingsData.activity_creation_mode as ActivityCreationMode) ?? defaultSettings.activityCreationMode,
             autosaveEnabled: settingsData.autosave_enabled ?? generalSettingsFallback?.autosaveEnabled ?? true,
@@ -276,6 +286,7 @@ export function useSettings() {
         } else {
           const nextGeneralSettings = {
             allowReopenCompleted: generalSettingsFallback?.allowReopenCompleted ?? true,
+            appVisualMode: generalSettingsFallback?.appVisualMode ?? defaultSettings.appVisualMode,
             defaultSort: generalSettingsFallback?.defaultSort ?? defaultSettings.defaultSort,
             activityCreationMode: generalSettingsFallback?.activityCreationMode ?? defaultSettings.activityCreationMode,
             autosaveEnabled: generalSettingsFallback?.autosaveEnabled ?? true,
@@ -317,6 +328,7 @@ export function useSettings() {
     customFields,
     tags,
     noteTemplates,
+    appVisualMode: generalSettings.appVisualMode,
     allowReopenCompleted: generalSettings.allowReopenCompleted,
     defaultSort: generalSettings.defaultSort,
     activityCreationMode: generalSettings.activityCreationMode,
@@ -561,7 +573,7 @@ export function useSettings() {
   }, [user, customFields]);
 
   // General settings operations
-  const updateGeneralSettings = useCallback(async (updates: Partial<Pick<AppSettings, 'allowReopenCompleted' | 'defaultSort' | 'activityCreationMode' | 'autosaveEnabled' | 'noteDateButtonsEnabled' | 'quickRescheduleDaysThreshold'>>) => {
+  const updateGeneralSettings = useCallback(async (updates: Partial<Pick<AppSettings, 'allowReopenCompleted' | 'appVisualMode' | 'defaultSort' | 'activityCreationMode' | 'autosaveEnabled' | 'noteDateButtonsEnabled' | 'quickRescheduleDaysThreshold'>>) => {
     if (!user) {
       throw new Error('Missing user');
     }
@@ -588,6 +600,7 @@ export function useSettings() {
       // Convert to DB format
       const dbUpdates: Partial<UserSettingsInsert> = {};
       if (normalizedUpdates.allowReopenCompleted !== undefined) dbUpdates.allow_reopen_completed = normalizedUpdates.allowReopenCompleted;
+      if (normalizedUpdates.appVisualMode !== undefined) dbUpdates.app_visual_mode = normalizedUpdates.appVisualMode;
       if (normalizedUpdates.defaultSort !== undefined) dbUpdates.default_sort = normalizedUpdates.defaultSort;
       if (normalizedUpdates.activityCreationMode !== undefined) dbUpdates.activity_creation_mode = normalizedUpdates.activityCreationMode;
       if (normalizedUpdates.autosaveEnabled !== undefined) dbUpdates.autosave_enabled = normalizedUpdates.autosaveEnabled;

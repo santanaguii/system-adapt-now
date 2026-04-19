@@ -7,6 +7,7 @@ import { useAppearanceContext } from '@/contexts/AppearanceContext';
 import { UnsavedChangesDialog } from '@/components/UnsavedChangesDialog';
 import { Button } from '@/components/ui/button';
 import { Brand } from '@/components/brand/Brand';
+import { AppTopBar, NewVisualSection } from '@/components/layout/AppTopBar';
 import {
   Activity,
   AppearanceSettings,
@@ -22,7 +23,7 @@ import {
   Tag,
 } from '@/types';
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@/components/ui/resizable';
-import { Loader2, LogOut, User } from 'lucide-react';
+import { Loader2, LogOut, Settings, User } from 'lucide-react';
 import { format } from 'date-fns';
 import { ACTIVITY_META, buildDependencySyncUpdates, createMetaPatch, getSourceLineIds } from '@/lib/activity-meta';
 import { formatDateKey, getDateKeyInTimeZone } from '@/lib/date';
@@ -38,6 +39,9 @@ const NotesSidebar = lazy(() =>
 );
 const NoteFormattingHints = lazy(() =>
   import('@/components/notes/NoteFormattingHints').then((module) => ({ default: module.NoteFormattingHints }))
+);
+const NewVisualNotesWorkspace = lazy(() =>
+  import('@/components/notes/NewVisualNotesWorkspace').then((module) => ({ default: module.NewVisualNotesWorkspace }))
 );
 const SettingsPanel = lazy(() =>
   import('@/components/settings/SettingsPanel').then((module) => ({ default: module.SettingsPanel }))
@@ -63,6 +67,7 @@ const MOBILE_MAX = 768;
 const TABLET_MAX = 1024;
 
 interface SettingsPreviewState {
+  appVisualMode: import('@/types').AppVisualMode;
   allowReopenCompleted: boolean;
   defaultSort: SortOption;
   autosaveEnabled: boolean;
@@ -93,6 +98,7 @@ const Index = () => {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsPreview, setSettingsPreview] = useState<SettingsPreviewState | null>(null);
+  const [newVisualSection, setNewVisualSection] = useState<NewVisualSection>('dashboard');
   const [sortOverride, setSortOverride] = useState<SortOption | null>(null);
   const [pendingLineToConvert, setPendingLineToConvert] = useState<NoteLine | null>(null);
   const [showCreateDialogFromNote, setShowCreateDialogFromNote] = useState(false);
@@ -151,6 +157,7 @@ const Index = () => {
     saveStatus,
     hasUnsavedChanges,
     saveAllPending,
+    replaceNoteRichContent,
     discardChanges,
     undo,
     redo,
@@ -370,6 +377,7 @@ const Index = () => {
   }, [activityByLineId]);
 
   const effectiveAppearance = settingsPreview?.appearance ?? appearance;
+  const effectiveAppVisualMode = settings.appVisualMode;
   const effectiveTags = settingsPreview?.tags ?? settings.tags;
   const effectiveCustomFields = settingsPreview?.customFields ?? settings.customFields;
   const effectiveLayout = settingsPreview?.layout ?? settings.layout;
@@ -417,6 +425,7 @@ const Index = () => {
   const commonProps = {
     username: user?.username || '',
     onSignOut: signOut,
+    appVisualMode: effectiveAppVisualMode,
     currentDate,
     note: currentNote,
     onDateChange: handleDateChange,
@@ -463,9 +472,43 @@ const Index = () => {
   };
 
   const useMobileLayout = isMobile && effectiveAppearance.mobileLayoutMode === 'mobile';
-  const showLayoutSelector = isMobile;
+  const showLayoutSelector = isMobile && effectiveAppVisualMode !== 'new';
 
   const renderContent = () => {
+    if (effectiveAppVisualMode === 'new') {
+      return (
+        <div className="flex h-screen flex-col overflow-hidden bg-background">
+          <AppTopBar
+            username={user?.username || ''}
+            onOpenSettings={() => setSettingsOpen(true)}
+            onSignOut={signOut}
+            selectedSection={newVisualSection}
+            onSectionChange={setNewVisualSection}
+            className="shrink-0"
+          />
+          {newVisualSection === 'notes' ? (
+            <Suspense fallback={<SectionFallback />}>
+              <NewVisualNotesWorkspace
+                currentDate={currentDate}
+                note={currentNote}
+                allDatesWithNotes={allDatesWithNotes}
+                onDateChange={handleDateChange}
+                onSearch={searchNotes}
+                onSelectSearchResult={handleSelectSearchResult}
+                onReplaceContent={replaceNoteRichContent}
+                onSave={saveAllPending}
+                autosaveEnabled={effectiveAutosaveEnabled}
+                hasUnsavedChanges={hasUnsavedChanges}
+                saveStatus={saveStatus}
+              />
+            </Suspense>
+          ) : (
+            <div className="flex-1 bg-background" />
+          )}
+        </div>
+      );
+    }
+
     if (useMobileLayout) {
       return (
         <Suspense fallback={<SectionFallback />}>
@@ -612,6 +655,9 @@ const Index = () => {
               <User className="h-4 w-4" />
               <span>{user?.username}</span>
             </div>
+            <Button variant="ghost" size="icon" onClick={() => setSettingsOpen(true)} className="h-8 w-8">
+              <Settings className="h-4 w-4" />
+            </Button>
             <Button variant="ghost" size="sm" onClick={signOut} className="h-8">
               <LogOut className="h-4 w-4 mr-2" />
               Sair
@@ -711,6 +757,7 @@ const Index = () => {
             customFields={settings.customFields}
             tags={settings.tags}
             noteTemplates={settings.noteTemplates}
+            appVisualMode={settings.appVisualMode}
             allowReopenCompleted={settings.allowReopenCompleted}
             defaultSort={settings.defaultSort}
             autosaveEnabled={settings.autosaveEnabled}

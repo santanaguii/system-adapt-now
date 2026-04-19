@@ -114,6 +114,7 @@ export interface NoteSearchResult {
 export type SortOption = 'manual' | 'dueDate_asc' | 'dueDate_desc' | 'priority_asc' | 'priority_desc' | 'createdAt_desc' | 'tag' | 'field';
 
 export type ActivityCreationMode = 'simple' | 'detailed';
+export type AppVisualMode = 'current' | 'new';
 
 // Appearance settings types
 export type FontFamily = 'inter' | 'system' | 'roboto' | 'opensans' | 'poppins';
@@ -188,6 +189,7 @@ export interface AppSettings {
   customFields: CustomField[];
   tags: Tag[];
   noteTemplates: NoteTemplate[];
+  appVisualMode: AppVisualMode;
   allowReopenCompleted: boolean;
   defaultSort: SortOption;
   activityCreationMode: ActivityCreationMode;

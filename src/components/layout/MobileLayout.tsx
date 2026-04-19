@@ -7,14 +7,16 @@ import { ActivityList } from '@/components/activities/ActivityList';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { Brand } from '@/components/brand/Brand';
+import { AppTopBar } from '@/components/layout/AppTopBar';
 import { LogOut, User, Settings, FileText, CheckSquare, Menu, ArrowRightLeft } from 'lucide-react';
-import { Activity, CustomField, Tag, SortOption, DailyNote, NoteSearchResult, LineType, ActivityListDisplaySettings, FilterConfig, NoteLine, NoteTemplate, LayoutSettings } from '@/types';
+import { Activity, AppVisualMode, CustomField, Tag, SortOption, DailyNote, NoteSearchResult, LineType, ActivityListDisplaySettings, FilterConfig, NoteLine, NoteTemplate, LayoutSettings } from '@/types';
 import { SaveStatus } from '@/hooks/useNotes';
 
 interface MobileLayoutProps {
   // User
   username: string;
   onSignOut: () => void;
+  appVisualMode: AppVisualMode;
   
   // Notes
   currentDate: Date;
@@ -66,6 +68,7 @@ interface MobileLayoutProps {
 export function MobileLayout({
   username,
   onSignOut,
+  appVisualMode,
   currentDate,
   note,
   onDateChange,
@@ -182,12 +185,15 @@ export function MobileLayout({
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-background">
-      <div className="flex items-center justify-between border-b bg-muted/30 px-3 py-2">
-        <div className="flex min-w-0 items-center gap-2">
-          {layout.showNotesList && layout.showNotes && (
+      {appVisualMode === 'new' ? (
+        <AppTopBar
+          username={username}
+          onOpenSettings={onOpenSettings}
+          onSignOut={onSignOut}
+          leadingSlot={layout.showNotesList && layout.showNotes ? (
             <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
               <SheetTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-8 w-8">
+                <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full">
                   <Menu className="h-4 w-4" />
                 </Button>
               </SheetTrigger>
@@ -210,37 +216,69 @@ export function MobileLayout({
                 />
               </SheetContent>
             </Sheet>
-          )}
+          ) : undefined}
+        />
+      ) : (
+        <div className="flex items-center justify-between border-b bg-muted/30 px-3 py-2">
+          <div className="flex min-w-0 items-center gap-2">
+            {layout.showNotesList && layout.showNotes && (
+              <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
+                <SheetTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-8 w-8">
+                    <Menu className="h-4 w-4" />
+                  </Button>
+                </SheetTrigger>
+                <SheetContent side="left" className="w-[280px] p-0">
+                  <NotesSidebar
+                    dates={allDatesWithNotes}
+                    currentDate={currentDate}
+                    showDateButtons={noteDateButtonsEnabled}
+                    onSelectDate={(date) => {
+                      onDateChange(date);
+                      setActiveTab('notes');
+                      setSidebarOpen(false);
+                    }}
+                    onSearch={onSearch}
+                    onSelectSearchResult={(result) => {
+                      onSelectSearchResult?.(result);
+                      setActiveTab('notes');
+                      setSidebarOpen(false);
+                    }}
+                  />
+                </SheetContent>
+              </Sheet>
+            )}
 
-          <div className="min-w-0">
-            <Brand compact />
-            <div className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
-              <User className="h-3.5 w-3.5" />
-              <span className="truncate max-w-[120px]">{username}</span>
+            <div className="min-w-0">
+              <Brand compact />
+              <div className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
+                <User className="h-3.5 w-3.5" />
+                <span className="truncate max-w-[120px]">{username}</span>
+              </div>
             </div>
           </div>
-        </div>
-        <div className="flex items-center gap-1">
-          {!layout.showTabs && layout.showNotes && layout.showActivities && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setActiveTab((current) => current === 'notes' ? 'activities' : 'notes')}
-              className="h-8 gap-1 px-2"
-              title={resolvedActiveTab === 'notes' ? 'Mostrar atividades' : 'Mostrar notas'}
-            >
-              <ArrowRightLeft className="h-4 w-4" />
-              <span className="text-xs">{resolvedActiveTab === 'notes' ? 'Ativ.' : 'Notas'}</span>
+          <div className="flex items-center gap-1">
+            {!layout.showTabs && layout.showNotes && layout.showActivities && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setActiveTab((current) => current === 'notes' ? 'activities' : 'notes')}
+                className="h-8 gap-1 px-2"
+                title={resolvedActiveTab === 'notes' ? 'Mostrar atividades' : 'Mostrar notas'}
+              >
+                <ArrowRightLeft className="h-4 w-4" />
+                <span className="text-xs">{resolvedActiveTab === 'notes' ? 'Ativ.' : 'Notas'}</span>
+              </Button>
+            )}
+            <Button variant="ghost" size="icon" onClick={onOpenSettings} className="h-8 w-8">
+              <Settings className="h-4 w-4" />
             </Button>
-          )}
-          <Button variant="ghost" size="icon" onClick={onOpenSettings} className="h-8 w-8">
-            <Settings className="h-4 w-4" />
-          </Button>
-          <Button variant="ghost" size="icon" onClick={onSignOut} className="h-8 w-8">
-            <LogOut className="h-4 w-4" />
-          </Button>
+            <Button variant="ghost" size="icon" onClick={onSignOut} className="h-8 w-8">
+              <LogOut className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
-      </div>
+      )}
 
       {layout.showNotes && layout.showActivities ? (
         layout.showTabs ? (

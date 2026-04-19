@@ -18,6 +18,7 @@ describe('buildDefaultUserSettings', () => {
     const settings = buildDefaultUserSettings('user-1');
 
     expect(settings.user_id).toBe('user-1');
+    expect(settings.app_visual_mode).toBe('current');
     expect(settings.allow_reopen_completed).toBe(true);
     expect(settings.autosave_enabled).toBe(true);
     expect(settings.note_date_buttons_enabled).toBe(true);
@@ -79,6 +80,7 @@ describe('general settings fallback', () => {
 
     writeGeneralSettingsFallback('user-1', {
       defaultSort: 'createdAt_desc',
+      appVisualMode: 'new',
       allowReopenCompleted: false,
       activityCreationMode: 'simple',
       autosaveEnabled: false,
@@ -105,6 +107,7 @@ describe('general settings fallback', () => {
 
     expect(readGeneralSettingsFallback('user-1')).toEqual({
       defaultSort: 'createdAt_desc',
+      appVisualMode: 'new',
       allowReopenCompleted: false,
       activityCreationMode: 'simple',
       autosaveEnabled: false,

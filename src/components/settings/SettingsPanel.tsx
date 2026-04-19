@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityListDisplaySettings,
+  AppVisualMode,
   AppearanceSettings,
   CustomField,
   FieldType,
@@ -44,6 +45,7 @@ import { NoteShortcutsSettingsTab } from './NoteShortcutsSettings';
 import { isProtectedCustomField, sanitizeListDisplayForFields } from '@/lib/custom-fields';
 
 export interface SettingsPanelPreview {
+  appVisualMode: AppVisualMode;
   allowReopenCompleted: boolean;
   defaultSort: SortOption;
   autosaveEnabled: boolean;
@@ -65,6 +67,7 @@ interface SettingsPanelProps {
   customFields: CustomField[];
   tags: Tag[];
   noteTemplates: NoteTemplate[];
+  appVisualMode: AppVisualMode;
   allowReopenCompleted: boolean;
   defaultSort: SortOption;
   autosaveEnabled: boolean;
@@ -82,6 +85,7 @@ interface SettingsPanelProps {
   onUpdateTag: (id: string, updates: Partial<Tag>) => Promise<void> | void;
   onDeleteTag: (id: string) => Promise<void> | void;
   onUpdateGeneralSettings: (updates: {
+    appVisualMode?: AppVisualMode;
     allowReopenCompleted?: boolean;
     defaultSort?: SortOption;
     autosaveEnabled?: boolean;
@@ -175,6 +179,7 @@ export function SettingsPanel({
   customFields,
   tags,
   noteTemplates,
+  appVisualMode,
   allowReopenCompleted,
   defaultSort,
   autosaveEnabled,
@@ -199,6 +204,7 @@ export function SettingsPanel({
   onUpdateNoteTemplates,
   onPreviewChange,
 }: SettingsPanelProps) {
+  const [draftAppVisualMode, setDraftAppVisualMode] = useState<AppVisualMode>(appVisualMode);
   const [draftAllowReopenCompleted, setDraftAllowReopenCompleted] = useState(allowReopenCompleted);
   const [draftDefaultSort, setDraftDefaultSort] = useState<SortOption>(defaultSort);
   const [draftAutosaveEnabled, setDraftAutosaveEnabled] = useState(autosaveEnabled);
@@ -225,6 +231,7 @@ export function SettingsPanel({
       return;
     }
 
+    setDraftAppVisualMode(appVisualMode);
     setDraftAllowReopenCompleted(allowReopenCompleted);
     setDraftDefaultSort(defaultSort);
     setDraftAutosaveEnabled(autosaveEnabled);
@@ -246,6 +253,7 @@ export function SettingsPanel({
     setIsSaving(false);
     setShowUnsavedCloseDialog(false);
   }, [
+    appVisualMode,
     allowReopenCompleted,
     appearance,
     autosaveEnabled,
@@ -276,6 +284,7 @@ export function SettingsPanel({
     }
 
     onPreviewChange?.({
+      appVisualMode: draftAppVisualMode,
       allowReopenCompleted: draftAllowReopenCompleted,
       defaultSort: draftDefaultSort,
       autosaveEnabled: draftAutosaveEnabled,
@@ -291,6 +300,7 @@ export function SettingsPanel({
       noteTemplates: draftNoteTemplates,
     });
   }, [
+    draftAppVisualMode,
     draftAllowReopenCompleted,
     draftAppearance,
     draftAutosaveEnabled,
@@ -351,6 +361,7 @@ export function SettingsPanel({
 
   const hasChanges = useMemo(() => {
     return (
+      draftAppVisualMode !== appVisualMode ||
       draftAllowReopenCompleted !== allowReopenCompleted ||
       draftDefaultSort !== defaultSort ||
       draftAutosaveEnabled !== autosaveEnabled ||
@@ -365,6 +376,7 @@ export function SettingsPanel({
       shallowChanged(draftNoteTemplates, noteTemplates)
     );
   }, [
+    appVisualMode,
     allowReopenCompleted,
     appearance,
     autosaveEnabled,
@@ -372,6 +384,7 @@ export function SettingsPanel({
     quickRescheduleDaysThreshold,
     customFields,
     defaultSort,
+    draftAppVisualMode,
     draftAllowReopenCompleted,
     draftAppearance,
     draftAutosaveEnabled,
@@ -428,6 +441,7 @@ export function SettingsPanel({
 
     try {
       if (
+        draftAppVisualMode !== appVisualMode ||
         draftAllowReopenCompleted !== allowReopenCompleted ||
         draftDefaultSort !== defaultSort ||
         draftAutosaveEnabled !== autosaveEnabled ||
@@ -436,6 +450,7 @@ export function SettingsPanel({
       ) {
         await Promise.resolve(
           onUpdateGeneralSettings({
+            appVisualMode: draftAppVisualMode,
             allowReopenCompleted: draftAllowReopenCompleted,
             defaultSort: draftDefaultSort,
             autosaveEnabled: draftAutosaveEnabled,
@@ -585,6 +600,24 @@ export function SettingsPanel({
             <TabsContent value="general" className="mt-0 space-y-6">
               <div className="space-y-4">
                 <div className="flex items-center justify-between py-2">
+                  <div className="space-y-2">
+                    <div>
+                      <Label className="font-medium">Visual do app</Label>
+                      <p className="text-sm text-muted-foreground">Escolha entre o visual atual e o novo visual em preparacao. A troca so acontece ao salvar.</p>
+                    </div>
+                    <Select value={draftAppVisualMode} onValueChange={(value) => setDraftAppVisualMode(value as AppVisualMode)}>
+                      <SelectTrigger className="h-9 max-w-[240px]">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="current">Visual anterior</SelectItem>
+                        <SelectItem value="new">Novo visual</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between border-t pt-4">
                   <div>
                     <Label className="font-medium">Permitir reabrir concluidas</Label>
                     <p className="text-sm text-muted-foreground">Desmarcar checkbox de atividades concluidas</p>

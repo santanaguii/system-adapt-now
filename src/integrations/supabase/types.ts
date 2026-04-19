@@ -214,6 +214,7 @@ export type Database = {
       user_settings: {
         Row: {
           activity_creation_mode: string | null
+          app_visual_mode: string | null
           allow_reopen_completed: boolean | null
           autosave_enabled: boolean
           color_theme: string
@@ -235,6 +236,7 @@ export type Database = {
         }
         Insert: {
           activity_creation_mode?: string | null
+          app_visual_mode?: string | null
           allow_reopen_completed?: boolean | null
           autosave_enabled?: boolean
           color_theme?: string
@@ -256,6 +258,7 @@ export type Database = {
         }
         Update: {
           activity_creation_mode?: string | null
+          app_visual_mode?: string | null
           allow_reopen_completed?: boolean | null
           autosave_enabled?: boolean
           color_theme?: string

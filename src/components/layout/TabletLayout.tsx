@@ -5,9 +5,10 @@ import { ActivityList } from '@/components/activities/ActivityList';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { Brand } from '@/components/brand/Brand';
+import { AppTopBar } from '@/components/layout/AppTopBar';
 import { LogOut, User, Menu } from 'lucide-react';
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@/components/ui/resizable';
-import { Activity, CustomField, Tag, SortOption, DailyNote, NoteSearchResult, LineType, ActivityListDisplaySettings, FilterConfig, NoteLine, NoteTemplate, LayoutSettings } from '@/types';
+import { Activity, AppVisualMode, CustomField, Tag, SortOption, DailyNote, NoteSearchResult, LineType, ActivityListDisplaySettings, FilterConfig, NoteLine, NoteTemplate, LayoutSettings } from '@/types';
 import { SaveStatus } from '@/hooks/useNotes';
 import { useState } from 'react';
 
@@ -15,6 +16,7 @@ interface TabletLayoutProps {
   // User
   username: string;
   onSignOut: () => void;
+  appVisualMode: AppVisualMode;
   
   // Notes
   currentDate: Date;
@@ -67,6 +69,7 @@ interface TabletLayoutProps {
 export function TabletLayout({
   username,
   onSignOut,
+  appVisualMode,
   currentDate,
   note,
   onDateChange,
@@ -168,12 +171,15 @@ export function TabletLayout({
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-background">
-      <div className="flex items-center justify-between border-b bg-muted/30 px-4 py-2">
-        <div className="flex min-w-0 items-center gap-3">
-          {layout.showNotesList && layout.showNotes && (
+      {appVisualMode === 'new' ? (
+        <AppTopBar
+          username={username}
+          onOpenSettings={onOpenSettings}
+          onSignOut={onSignOut}
+          leadingSlot={layout.showNotesList && layout.showNotes ? (
             <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
               <SheetTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-8 w-8">
+                <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full">
                   <Menu className="h-4 w-4" />
                 </Button>
               </SheetTrigger>
@@ -194,23 +200,53 @@ export function TabletLayout({
                 />
               </SheetContent>
             </Sheet>
-          )}
-          <Brand compact />
-        </div>
-        <div className="flex items-center gap-3">
-          <div className="hidden items-center gap-2 text-sm text-muted-foreground sm:flex">
-            <User className="h-4 w-4" />
-            <span>{username}</span>
+          ) : undefined}
+        />
+      ) : (
+        <div className="flex items-center justify-between border-b bg-muted/30 px-4 py-2">
+          <div className="flex min-w-0 items-center gap-3">
+            {layout.showNotesList && layout.showNotes && (
+              <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
+                <SheetTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-8 w-8">
+                    <Menu className="h-4 w-4" />
+                  </Button>
+                </SheetTrigger>
+                <SheetContent side="left" className="w-[280px] p-0">
+                  <NotesSidebar
+                    dates={allDatesWithNotes}
+                    currentDate={currentDate}
+                    showDateButtons
+                    onSelectDate={(date) => {
+                      onDateChange(date);
+                      setSidebarOpen(false);
+                    }}
+                    onSearch={onSearch}
+                    onSelectSearchResult={(result) => {
+                      onSelectSearchResult?.(result);
+                      setSidebarOpen(false);
+                    }}
+                  />
+                </SheetContent>
+              </Sheet>
+            )}
+            <Brand compact />
           </div>
-          <Button variant="ghost" size="sm" onClick={onSignOut} className="hidden h-8 sm:inline-flex">
-            <LogOut className="h-4 w-4 mr-2" />
-            Sair
-          </Button>
-          <Button variant="ghost" size="icon" onClick={onSignOut} className="h-8 w-8 sm:hidden">
-            <LogOut className="h-4 w-4" />
-          </Button>
+          <div className="flex items-center gap-3">
+            <div className="hidden items-center gap-2 text-sm text-muted-foreground sm:flex">
+              <User className="h-4 w-4" />
+              <span>{username}</span>
+            </div>
+            <Button variant="ghost" size="sm" onClick={onSignOut} className="hidden h-8 sm:inline-flex">
+              <LogOut className="h-4 w-4 mr-2" />
+              Sair
+            </Button>
+            <Button variant="ghost" size="icon" onClick={onSignOut} className="h-8 w-8 sm:hidden">
+              <LogOut className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Main content - Two panels */}
       <div className="min-h-0 flex flex-1 overflow-hidden">

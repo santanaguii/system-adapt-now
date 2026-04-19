@@ -49,12 +49,14 @@ Se estiver usando um banco remoto diferente do schema local, valide explicitamen
 - `note_date_buttons_enabled`
 - `quick_reschedule_days_threshold`
 - `layout_settings`
+- `app_visual_mode`
 
 As migrations relevantes ficam em:
 
 - `supabase/migrations/20260317213000_add_note_date_buttons_enabled_to_user_settings.sql`
 - `supabase/migrations/20260317220000_add_quick_reschedule_days_threshold_to_user_settings.sql`
 - `supabase/migrations/20260322120000_add_layout_settings_to_user_settings.sql`
+- `supabase/migrations/20260419143000_add_app_visual_mode_to_user_settings.sql`
 
 Sem isso, o frontend pode aparentar salvar configuracoes mas recarregar com valores incorretos por incompatibilidade de schema.
 

@@ -32,6 +32,10 @@ interface NoteLineRow {
   sort_order: number;
 }
 
+function stripHtmlTags(content: string) {
+  return content.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
 export function useNotes(autosaveEnabled: boolean = true) {
   const { user, isAuthenticated } = useAuthContext();
   const [notes, setNotes] = useState<DailyNote[]>([]);
@@ -375,6 +379,54 @@ export function useNotes(autosaveEnabled: boolean = true) {
     triggerSave(nextNote);
   }, [triggerSave]);
 
+  const replaceNoteContent = useCallback((date: Date, content: string) => {
+    const dateKey = format(date, 'yyyy-MM-dd');
+    const normalizedLines = content.replace(/\r\n/g, '\n').split('\n');
+    const nextContents = normalizedLines.length > 0 ? normalizedLines : [''];
+
+    setNotes((prev) => {
+      const noteIndex = prev.findIndex((note) => note.date === dateKey);
+      const existingNote = noteIndex >= 0 ? prev[noteIndex] : null;
+      const existingLines = existingNote?.lines ?? [];
+      const nextLines: NoteLine[] = nextContents.map((lineContent, index) => ({
+        id: existingLines[index]?.id ?? generateId(),
+        content: lineContent,
+        type: 'paragraph',
+      }));
+
+      const nextNote: DailyNote = {
+        date: dateKey,
+        lines: nextLines.length > 0 ? nextLines : [{ id: generateId(), content: '', type: 'paragraph' }],
+        updatedAt: new Date(),
+      };
+
+      triggerSave(nextNote);
+      return upsertNoteSnapshot(prev, nextNote);
+    });
+  }, [triggerSave]);
+
+  const replaceNoteRichContent = useCallback((date: Date, html: string) => {
+    const dateKey = format(date, 'yyyy-MM-dd');
+    const normalizedHtml = html.trim() || '<p></p>';
+
+    setNotes((prev) => {
+      const existingNote = prev.find((note) => note.date === dateKey);
+      const existingLineId = existingNote?.lines[0]?.id;
+      const nextNote: DailyNote = {
+        date: dateKey,
+        lines: [{
+          id: existingLineId ?? generateId(),
+          content: normalizedHtml,
+          type: 'paragraph',
+        }],
+        updatedAt: new Date(),
+      };
+
+      triggerSave(nextNote);
+      return upsertNoteSnapshot(prev, nextNote);
+    });
+  }, [triggerSave]);
+
   const updateLine = useCallback((date: Date, lineId: string, updates: Partial<NoteLine>) => {
     const dateKey = format(date, 'yyyy-MM-dd');
     
@@ -521,7 +573,7 @@ export function useNotes(autosaveEnabled: boolean = true) {
     }
 
     return notes.flatMap((note) => note.lines.flatMap((line) => {
-      const content = line.content;
+      const content = stripHtmlTags(line.content);
       const lowerContent = content.toLowerCase();
 
       if (!lowerContent.trim()) {
@@ -609,6 +661,8 @@ export function useNotes(autosaveEnabled: boolean = true) {
     isLoading,
     getNote,
     saveNote,
+    replaceNoteContent,
+    replaceNoteRichContent,
     updateLine,
     addLine,
     deleteLine,
