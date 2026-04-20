@@ -286,4 +286,16 @@
   .transition-smooth {
     @apply transition-all duration-300 ease-out;
   }
+
+  .rich-note-editor [data-note-style='comment'] {
+    color: rgb(148 163 184);
+    font-style: italic;
+    text-decoration: line-through;
+  }
+
+  .rich-note-editor [data-note-style='comment'] * {
+    color: inherit !important;
+    font-style: inherit !important;
+    text-decoration: inherit !important;
+  }
 }

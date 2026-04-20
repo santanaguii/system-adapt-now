@@ -546,6 +546,7 @@ const Index = () => {
           ) : newVisualSection === 'notes' ? (
             <Suspense fallback={<SectionFallback />}>
               <NewVisualNotesWorkspace
+                key={currentNote.date}
                 currentDate={currentDate}
                 note={currentNote}
                 allDatesWithNotes={allDatesWithNotes}

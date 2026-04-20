@@ -85,6 +85,52 @@ function getBlockTextContent(block: HTMLElement) {
   return clone.textContent ?? '';
 }
 
+function isCommentBlock(block: HTMLElement) {
+  return block.dataset.noteStyle === 'comment';
+}
+
+function clearCommentStyle(block: HTMLElement) {
+  delete block.dataset.noteStyle;
+  block.querySelectorAll<HTMLElement>('[data-note-style="comment"]').forEach((node) => {
+    delete node.dataset.noteStyle;
+  });
+}
+
+function getBaseBlockStyle(block: HTMLElement): Exclude<RichBlockStyle, 'comment'> {
+  if (block.tagName === 'H1') return 'h1';
+  if (block.tagName === 'H2') return 'h2';
+  if (block.tagName === 'LI') return 'bullet';
+  if (block.tagName === 'BLOCKQUOTE') return 'blockquote';
+  return 'paragraph';
+}
+
+function supportsInlineFormatting(block: HTMLElement) {
+  const baseStyle = getBaseBlockStyle(block);
+  return baseStyle !== 'h1' && baseStyle !== 'h2';
+}
+
+function stripInlineFormatting(block: HTMLElement) {
+  const formattingTags = ['B', 'STRONG', 'I', 'EM', 'U', 'FONT', 'MARK', 'SPAN'];
+
+  Array.from(block.querySelectorAll('*')).forEach((node) => {
+    if (!(node instanceof HTMLElement) || node.matches('[data-collapse-toggle]')) {
+      return;
+    }
+
+    node.removeAttribute('style');
+
+    if (!formattingTags.includes(node.tagName)) {
+      return;
+    }
+
+    while (node.firstChild) {
+      node.parentNode?.insertBefore(node.firstChild, node);
+    }
+
+    node.remove();
+  });
+}
+
 function isBlockEmpty(block: HTMLElement) {
   return !getBlockTextContent(block).trim();
 }
@@ -147,7 +193,7 @@ function placeCaretInBlock(block: HTMLElement, position: 'start' | 'end') {
 function extractBlockContent(block: HTMLElement) {
   const fragment = document.createDocumentFragment();
   Array.from(block.childNodes).forEach((child) => {
-    if (child instanceof HTMLElement && child.matches('[data-collapse-toggle]')) {
+    if (child instanceof HTMLElement && child.matches('[data-collapse-toggle], [data-editor-placeholder]')) {
       return;
     }
     fragment.append(child.cloneNode(true));
@@ -174,6 +220,7 @@ function getHeadingLevel(element: Element | null) {
 function serializeEditorHtml(root: HTMLDivElement) {
   const clone = root.cloneNode(true) as HTMLDivElement;
   clone.querySelectorAll('[data-collapse-toggle]').forEach((node) => node.remove());
+  clone.querySelectorAll('[data-editor-placeholder]').forEach((node) => node.remove());
   return clone.innerHTML.trim() || '<p></p>';
 }
 
@@ -205,6 +252,158 @@ function replaceBlockTag(block: HTMLElement, nextTagName: 'p' | 'h1' | 'h2' | 'b
   return replacement;
 }
 
+function buildBlockFromSource(block: HTMLElement, nextTagName: 'p' | 'h1' | 'h2' | 'blockquote') {
+  const replacement = document.createElement(nextTagName);
+
+  Array.from(block.attributes).forEach((attribute) => {
+    if (attribute.name === 'data-note-style' || attribute.name === 'data-collapsed' || attribute.name === 'data-collapsible-heading') {
+      return;
+    }
+    replacement.setAttribute(attribute.name, attribute.value);
+  });
+
+  const content = extractBlockContent(block);
+  replacement.append(content);
+  return replacement;
+}
+
+function replaceListItemWithBlock(listItem: HTMLElement, nextTagName: 'p' | 'h1' | 'h2' | 'blockquote') {
+  const list = listItem.parentElement;
+  const parent = list?.parentElement;
+  if (!list || !parent) {
+    return null;
+  }
+
+  const replacement = buildBlockFromSource(listItem, nextTagName);
+  const previousItems: HTMLElement[] = [];
+  const nextItems: HTMLElement[] = [];
+
+  Array.from(list.children).forEach((child) => {
+    if (!(child instanceof HTMLElement) || child.tagName !== 'LI' || child === listItem) {
+      return;
+    }
+
+    if (child.compareDocumentPosition(listItem) & Node.DOCUMENT_POSITION_FOLLOWING) {
+      previousItems.push(child);
+      return;
+    }
+
+    nextItems.push(child);
+  });
+
+  const createListClone = () => list.cloneNode(false) as HTMLElement;
+
+  if (previousItems.length === 0 && nextItems.length === 0) {
+    list.replaceWith(replacement);
+    return replacement;
+  }
+
+  if (previousItems.length === 0) {
+    listItem.remove();
+    parent.insertBefore(replacement, list);
+    return replacement;
+  }
+
+  if (nextItems.length === 0) {
+    listItem.remove();
+    parent.insertBefore(replacement, list.nextSibling);
+    return replacement;
+  }
+
+  const trailingList = createListClone();
+  nextItems.forEach((item) => trailingList.appendChild(item));
+  listItem.remove();
+  parent.insertBefore(replacement, list.nextSibling);
+  parent.insertBefore(trailingList, replacement.nextSibling);
+  return replacement;
+}
+
+function replaceBlockWithBullet(block: HTMLElement) {
+  const list = document.createElement('ul');
+  const listItem = document.createElement('li');
+  const content = extractBlockContent(block);
+  listItem.append(content);
+  list.append(listItem);
+  block.replaceWith(list);
+  return listItem;
+}
+
+function getPreviousEditableBlock(block: HTMLElement) {
+  if (block.tagName === 'LI') {
+    const previousItem = block.previousElementSibling;
+    if (previousItem instanceof HTMLElement) {
+      return previousItem;
+    }
+
+    const list = block.parentElement;
+    const previousBlock = list?.previousElementSibling;
+    if (!previousBlock) {
+      return null;
+    }
+
+    if ((previousBlock.tagName === 'UL' || previousBlock.tagName === 'OL') && previousBlock.lastElementChild instanceof HTMLElement) {
+      return previousBlock.lastElementChild;
+    }
+
+    return previousBlock instanceof HTMLElement ? previousBlock : null;
+  }
+
+  const previousBlock = block.previousElementSibling;
+  if (!previousBlock) {
+    return null;
+  }
+
+  if ((previousBlock.tagName === 'UL' || previousBlock.tagName === 'OL') && previousBlock.lastElementChild instanceof HTMLElement) {
+    return previousBlock.lastElementChild;
+  }
+
+  return previousBlock instanceof HTMLElement ? previousBlock : null;
+}
+
+function getNextEditableBlock(block: HTMLElement) {
+  if (block.tagName === 'LI') {
+    const nextItem = block.nextElementSibling;
+    if (nextItem instanceof HTMLElement) {
+      return nextItem;
+    }
+
+    const list = block.parentElement;
+    const nextBlock = list?.nextElementSibling;
+    if (!nextBlock) {
+      return null;
+    }
+
+    if ((nextBlock.tagName === 'UL' || nextBlock.tagName === 'OL') && nextBlock.firstElementChild instanceof HTMLElement) {
+      return nextBlock.firstElementChild;
+    }
+
+    return nextBlock instanceof HTMLElement ? nextBlock : null;
+  }
+
+  const nextBlock = block.nextElementSibling;
+  if (!nextBlock) {
+    return null;
+  }
+
+  if ((nextBlock.tagName === 'UL' || nextBlock.tagName === 'OL') && nextBlock.firstElementChild instanceof HTMLElement) {
+    return nextBlock.firstElementChild;
+  }
+
+  return nextBlock instanceof HTMLElement ? nextBlock : null;
+}
+
+function insertParagraphAfterBlock(block: HTMLElement) {
+  const paragraph = document.createElement('p');
+  block.insertAdjacentElement('afterend', paragraph);
+  return paragraph;
+}
+
+function insertListItemAfterBlock(listItem: HTMLElement) {
+  const nextListItem = document.createElement('li');
+  listItem.insertAdjacentElement('afterend', nextListItem);
+  return nextListItem;
+}
+
 function normalizeEmptyStructuralBlocks(root: HTMLDivElement) {
   let changed = false;
 
@@ -218,17 +417,19 @@ function normalizeEmptyStructuralBlocks(root: HTMLDivElement) {
     changed = true;
   });
 
-  root.querySelectorAll('h1, h2, blockquote').forEach((node) => {
-    const block = node as HTMLElement;
-    if (!isBlockEmpty(block)) {
-      return;
-    }
-
-    replaceBlockTag(block, 'p');
-    changed = true;
-  });
-
   return changed;
+}
+
+function syncEditablePlaceholder(root: HTMLDivElement, activeBlock?: HTMLElement | null) {
+  root.querySelectorAll('[data-editor-placeholder]').forEach((node) => node.remove());
+
+  if (!activeBlock || !root.contains(activeBlock) || !isBlockEmpty(activeBlock)) {
+    return;
+  }
+
+  const br = document.createElement('br');
+  br.setAttribute('data-editor-placeholder', 'true');
+  activeBlock.append(br);
 }
 
 function ensureHeadingControls(root: HTMLDivElement) {
@@ -263,7 +464,8 @@ function applyCollapsedVisibility(root: HTMLDivElement, hideComments: boolean) {
 
   directChildren.forEach((child) => {
     const headingLevel = getHeadingLevel(child);
-    const isComment = child.dataset.noteStyle === 'comment';
+    const isComment = isCommentBlock(child);
+    const hiddenByComment = hideComments && isComment;
 
     if (headingLevel !== null) {
       if (collapsedHeading && headingLevel <= collapsedHeading.level) {
@@ -271,19 +473,40 @@ function applyCollapsedVisibility(root: HTMLDivElement, hideComments: boolean) {
       }
 
       const isCollapsed = child.dataset.collapsed === 'true';
-      child.hidden = false;
+      child.hidden = hiddenByComment;
 
       const toggle = child.querySelector<HTMLElement>('[data-collapse-toggle]');
       if (toggle) {
         toggle.textContent = isCollapsed ? COLLAPSE_CLOSED_ICON : COLLAPSE_OPEN_ICON;
       }
 
-      collapsedHeading = isCollapsed ? { level: headingLevel } : collapsedHeading;
+      if (!hiddenByComment) {
+        collapsedHeading = isCollapsed ? { level: headingLevel } : collapsedHeading;
+      }
       return;
     }
 
     const hiddenByCollapse = collapsedHeading !== null;
-    const hiddenByComment = hideComments && isComment;
+    const isList = child.tagName === 'UL' || child.tagName === 'OL';
+
+    if (isList) {
+      const listItems = Array.from(child.children).filter((node): node is HTMLElement => node instanceof HTMLElement && node.tagName === 'LI');
+
+      if (hiddenByCollapse) {
+        child.hidden = true;
+        listItems.forEach((item) => {
+          item.hidden = true;
+        });
+        return;
+      }
+
+      listItems.forEach((item) => {
+        item.hidden = hideComments && isCommentBlock(item);
+      });
+      child.hidden = hiddenByComment || (listItems.length > 0 && listItems.every((item) => item.hidden));
+      return;
+    }
+
     child.hidden = hiddenByCollapse || hiddenByComment;
   });
 }
@@ -343,6 +566,7 @@ export function NewVisualNotesWorkspace({
   const [isBoldActive, setIsBoldActive] = useState(false);
   const [isItalicActive, setIsItalicActive] = useState(false);
   const [isUnderlineActive, setIsUnderlineActive] = useState(false);
+  const [canUseInlineFormatting, setCanUseInlineFormatting] = useState(true);
   const [hideComments, setHideComments] = useState(false);
   const [textColor, setTextColor] = useState('#2f241f');
   const [backgroundColor, setBackgroundColor] = useState('#fff4bf');
@@ -358,10 +582,14 @@ export function NewVisualNotesWorkspace({
     if (currentSerializedContent !== noteText) {
       editorRef.current.innerHTML = noteText;
       const normalizedOnLoad = normalizeEmptyStructuralBlocks(editorRef.current);
+      syncEditablePlaceholder(editorRef.current, null);
       ensureHeadingControls(editorRef.current);
       applyCollapsedVisibility(editorRef.current, hideComments);
       if (normalizedOnLoad) {
-        onReplaceContent(currentDate, serializeEditorHtml(editorRef.current));
+        const normalizedHtml = serializeEditorHtml(editorRef.current);
+        if (normalizedHtml !== noteText) {
+          onReplaceContent(currentDate, normalizedHtml);
+        }
       }
     }
   }, [hideComments, note.date, noteText]);
@@ -408,36 +636,47 @@ export function NewVisualNotesWorkspace({
   };
 
   const updateToolbarState = () => {
+    const block = getSelectionBlock();
+
     if (editorRef.current) {
       normalizeEmptyStructuralBlocks(editorRef.current);
+      syncEditablePlaceholder(editorRef.current, block instanceof HTMLElement ? block : null);
       ensureHeadingControls(editorRef.current);
       applyCollapsedVisibility(editorRef.current, hideComments);
     }
 
     saveEditorSelection();
-
-    const block = getSelectionBlock();
     if (!block) {
       return;
     }
 
-    if (block.tagName === 'H1') {
+    if (block instanceof HTMLElement && isCommentBlock(block)) {
+      setActiveStyle('comment');
+    } else if (block.tagName === 'H1') {
       setActiveStyle('h1');
     } else if (block.tagName === 'H2') {
       setActiveStyle('h2');
     } else if (block.tagName === 'LI') {
       setActiveStyle('bullet');
-    } else if (block instanceof HTMLElement && block.dataset.noteStyle === 'comment') {
-      setActiveStyle('comment');
     } else if (block.tagName === 'BLOCKQUOTE') {
       setActiveStyle('blockquote');
     } else {
       setActiveStyle('paragraph');
     }
 
-    setIsBoldActive(document.queryCommandState('bold'));
-    setIsItalicActive(document.queryCommandState('italic'));
-    setIsUnderlineActive(document.queryCommandState('underline'));
+    const allowInlineFormatting = block instanceof HTMLElement && supportsInlineFormatting(block);
+    setCanUseInlineFormatting(allowInlineFormatting);
+
+    if (allowInlineFormatting) {
+      setIsBoldActive(document.queryCommandState('bold'));
+      setIsItalicActive(document.queryCommandState('italic'));
+      setIsUnderlineActive(document.queryCommandState('underline'));
+      return;
+    }
+
+    setIsBoldActive(false);
+    setIsItalicActive(false);
+    setIsUnderlineActive(false);
   };
 
   const persistEditorContent = () => {
@@ -452,6 +691,11 @@ export function NewVisualNotesWorkspace({
   const runEditorCommand = (command: string, value?: string) => {
     restoreEditorSelection();
     editorRef.current?.focus();
+    const currentBlock = getSelectionBlock();
+    if (currentBlock instanceof HTMLElement && !supportsInlineFormatting(currentBlock)) {
+      updateToolbarState();
+      return;
+    }
     document.execCommand(command, false, value);
     updateToolbarState();
     persistEditorContent();
@@ -468,36 +712,45 @@ export function NewVisualNotesWorkspace({
     }
 
     let targetBlock: HTMLElement | null = currentBlock;
+    let shouldEnableComment = false;
 
-    if (value === 'bullet') {
-      if (currentBlock.tagName !== 'LI') {
-        if (document.queryCommandState('insertUnorderedList')) {
-          document.execCommand('insertUnorderedList');
-        }
-        placeCaretInBlock(currentBlock, 'end');
-        document.execCommand('insertUnorderedList');
-        targetBlock = getSelectionBlock() as HTMLElement | null;
+    if (value === 'comment') {
+      if (isCommentBlock(targetBlock)) {
+        clearCommentStyle(targetBlock);
+      } else {
+        shouldEnableComment = true;
       }
+    } else if (value === 'bullet') {
+      clearCommentStyle(currentBlock);
+      targetBlock = currentBlock.tagName === 'LI' ? currentBlock : replaceBlockWithBullet(currentBlock);
     } else {
-      if (currentBlock.tagName === 'LI') {
-        placeCaretInBlock(currentBlock, 'end');
-        document.execCommand('insertUnorderedList');
-        targetBlock = getSelectionBlock() as HTMLElement | null;
-      }
+      clearCommentStyle(currentBlock);
 
-      if (targetBlock instanceof HTMLElement) {
-        const nextTagName = value === 'comment' || value === 'paragraph' ? 'p' : value;
+      if (currentBlock.tagName === 'LI') {
+        const nextTagName = value === 'paragraph' ? 'p' : value;
+        targetBlock = replaceListItemWithBlock(currentBlock, nextTagName);
+      } else if (targetBlock instanceof HTMLElement) {
+        const nextTagName = value === 'paragraph' ? 'p' : value;
         targetBlock = replaceBlockTag(targetBlock, nextTagName);
-        placeCaretInBlock(targetBlock, 'end');
       }
     }
 
     if (targetBlock instanceof HTMLElement) {
-      if (value === 'comment' && targetBlock.tagName === 'P') {
+      if (shouldEnableComment) {
         targetBlock.dataset.noteStyle = 'comment';
-      } else {
-        delete targetBlock.dataset.noteStyle;
+      } else if (value !== 'comment') {
+        clearCommentStyle(targetBlock);
       }
+
+      if (value === 'h1' || value === 'h2') {
+        stripInlineFormatting(targetBlock);
+      }
+
+      placeCaretInBlock(targetBlock, 'end');
+    }
+
+    if (editorRef.current) {
+      syncEditablePlaceholder(editorRef.current, targetBlock);
     }
 
     updateToolbarState();
@@ -558,6 +811,7 @@ export function NewVisualNotesWorkspace({
       ensureHeadingControls(editorRef.current);
 
       const currentBlock = getSelectionBlock();
+      syncEditablePlaceholder(editorRef.current, currentBlock instanceof HTMLElement ? currentBlock : null);
       if (currentBlock instanceof HTMLElement) {
         const transformed = applyPrefixFormatting(currentBlock);
         if (transformed) {
@@ -622,23 +876,19 @@ export function NewVisualNotesWorkspace({
         return;
       }
 
-      if (currentBlock.tagName !== 'LI') {
-        event.preventDefault();
-        editorRef.current.focus();
-        document.execCommand('insertParagraph');
+      event.preventDefault();
+      const nextBlock =
+        currentBlock.tagName === 'LI'
+          ? insertListItemAfterBlock(currentBlock)
+          : insertParagraphAfterBlock(currentBlock);
 
-        const nextBlock = getSelectionBlock();
-        if (nextBlock instanceof HTMLElement) {
-          if (document.queryCommandState('insertUnorderedList')) {
-            document.execCommand('insertUnorderedList');
-          }
-          document.execCommand('formatBlock', false, 'p');
-          delete nextBlock.dataset.noteStyle;
-        }
-
-        updateToolbarState();
-        persistEditorContent();
-      }
+      clearCommentStyle(nextBlock);
+      syncEditablePlaceholder(editorRef.current, nextBlock);
+      ensureHeadingControls(editorRef.current);
+      applyCollapsedVisibility(editorRef.current, hideComments);
+      placeCaretInBlock(nextBlock, 'start');
+      updateToolbarState();
+      persistEditorContent();
       return;
     }
 
@@ -654,8 +904,8 @@ export function NewVisualNotesWorkspace({
 
     const caretOffset = getCaretOffsetWithinBlock(currentBlock);
     const blockLength = getBlockTextLength(currentBlock);
-    const previousBlock = currentBlock.previousElementSibling instanceof HTMLElement ? currentBlock.previousElementSibling : null;
-    const nextBlock = currentBlock.nextElementSibling instanceof HTMLElement ? currentBlock.nextElementSibling : null;
+    const previousBlock = getPreviousEditableBlock(currentBlock);
+    const nextBlock = getNextEditableBlock(currentBlock);
 
     if (event.key === 'Backspace' && isBlockEmpty(currentBlock)) {
       if (!previousBlock && !nextBlock) {
@@ -666,6 +916,7 @@ export function NewVisualNotesWorkspace({
       const focusTarget = previousBlock ?? nextBlock;
       const focusPosition = previousBlock ? 'end' : 'start';
       currentBlock.remove();
+      syncEditablePlaceholder(editorRef.current, focusTarget);
       ensureHeadingControls(editorRef.current);
       applyCollapsedVisibility(editorRef.current, hideComments);
       if (focusTarget) {
@@ -677,6 +928,27 @@ export function NewVisualNotesWorkspace({
     }
 
     if (event.key === 'Backspace' && caretOffset === 0 && previousBlock) {
+      const shouldResetFormatting = isCommentBlock(currentBlock) || getBaseBlockStyle(currentBlock) !== 'paragraph';
+      if (shouldResetFormatting) {
+        event.preventDefault();
+        clearCommentStyle(currentBlock);
+
+        let targetBlock = currentBlock;
+        if (currentBlock.tagName === 'LI') {
+          targetBlock = replaceListItemWithBlock(currentBlock, 'p') ?? currentBlock;
+        } else if (currentBlock.tagName !== 'P') {
+          targetBlock = replaceBlockTag(currentBlock, 'p');
+        }
+
+        syncEditablePlaceholder(editorRef.current, targetBlock);
+        ensureHeadingControls(editorRef.current);
+        applyCollapsedVisibility(editorRef.current, hideComments);
+        placeCaretInBlock(targetBlock, 'start');
+        updateToolbarState();
+        persistEditorContent();
+        return;
+      }
+
       event.preventDefault();
       const contentToMove = extractBlockContent(currentBlock);
       const insertBeforeNode = previousBlock.querySelector('[data-collapse-toggle]');
@@ -685,6 +957,7 @@ export function NewVisualNotesWorkspace({
       }
       previousBlock.insertBefore(contentToMove, insertBeforeNode);
       currentBlock.remove();
+      syncEditablePlaceholder(editorRef.current, previousBlock);
       ensureHeadingControls(editorRef.current);
       applyCollapsedVisibility(editorRef.current, hideComments);
       placeCaretInBlock(previousBlock, 'end');
@@ -702,6 +975,7 @@ export function NewVisualNotesWorkspace({
       }
       currentBlock.insertBefore(contentToMove, insertBeforeNode);
       nextBlock.remove();
+      syncEditablePlaceholder(editorRef.current, currentBlock);
       ensureHeadingControls(editorRef.current);
       applyCollapsedVisibility(editorRef.current, hideComments);
       placeCaretInBlock(currentBlock, 'end');
@@ -831,6 +1105,7 @@ export function NewVisualNotesWorkspace({
                 variant={isBoldActive ? 'secondary' : 'ghost'}
                 size="icon"
                 className="h-8 w-8 rounded-lg"
+                disabled={!canUseInlineFormatting}
                 onClick={() => runEditorCommand('bold')}
               >
                 <Bold className="h-4 w-4" />
@@ -840,6 +1115,7 @@ export function NewVisualNotesWorkspace({
                 variant={isItalicActive ? 'secondary' : 'ghost'}
                 size="icon"
                 className="h-8 w-8 rounded-lg"
+                disabled={!canUseInlineFormatting}
                 onClick={() => runEditorCommand('italic')}
               >
                 <Italic className="h-4 w-4" />
@@ -849,6 +1125,7 @@ export function NewVisualNotesWorkspace({
                 variant={isUnderlineActive ? 'secondary' : 'ghost'}
                 size="icon"
                 className="h-8 w-8 rounded-lg"
+                disabled={!canUseInlineFormatting}
                 onClick={() => runEditorCommand('underline')}
               >
                 <Underline className="h-4 w-4" />
@@ -858,6 +1135,7 @@ export function NewVisualNotesWorkspace({
                 <input
                   type="color"
                   value={textColor}
+                  disabled={!canUseInlineFormatting}
                   onChange={(event) => {
                     setTextColor(event.target.value);
                     runEditorCommand('foreColor', event.target.value);
@@ -872,6 +1150,7 @@ export function NewVisualNotesWorkspace({
                     key={color}
                     type="button"
                     className="h-5 w-5 rounded-full border border-border/70 transition hover:scale-105"
+                    disabled={!canUseInlineFormatting}
                     style={{ backgroundColor: color }}
                     aria-label={`Aplicar cor de texto ${color}`}
                     title="Cor predefinida do texto"
@@ -888,6 +1167,7 @@ export function NewVisualNotesWorkspace({
                   variant="ghost"
                   size="icon"
                   className="h-8 w-8 rounded-lg"
+                  disabled={!canUseInlineFormatting}
                   onClick={() => runEditorCommand('hiliteColor', 'transparent')}
                   title="Remover cor de fundo"
                 >
@@ -898,6 +1178,7 @@ export function NewVisualNotesWorkspace({
                   <input
                     type="color"
                     value={backgroundColor}
+                    disabled={!canUseInlineFormatting}
                     onChange={(event) => {
                       setBackgroundColor(event.target.value);
                       runEditorCommand('hiliteColor', event.target.value);
@@ -913,6 +1194,7 @@ export function NewVisualNotesWorkspace({
                     key={color}
                     type="button"
                     className="h-5 w-5 rounded-full border border-border/70 transition hover:scale-105"
+                    disabled={!canUseInlineFormatting}
                     style={{ backgroundColor: color }}
                     aria-label={`Aplicar cor de fundo ${color}`}
                     title="Cor predefinida do fundo"
@@ -933,6 +1215,12 @@ export function NewVisualNotesWorkspace({
               suppressContentEditableWarning
               onKeyDown={handleEditorKeyDown}
               onInput={handleEditorInput}
+              onFocus={updateToolbarState}
+              onBlur={() => {
+                if (editorRef.current) {
+                  syncEditablePlaceholder(editorRef.current, null);
+                }
+              }}
               onKeyUp={updateToolbarState}
               onMouseUp={updateToolbarState}
               onClick={(event) => {
@@ -944,7 +1232,7 @@ export function NewVisualNotesWorkspace({
                 }
                 updateToolbarState();
               }}
-              className="min-h-[calc(100vh-250px)] w-full rounded-2xl border border-transparent bg-transparent px-5 text-[17px] leading-6 text-foreground outline-none [&_blockquote]:my-1 [&_blockquote]:ml-0 [&_blockquote]:border-l-4 [&_blockquote]:border-border [&_blockquote]:pl-4 [&_blockquote]:italic [&_h1]:mb-1 [&_h1]:mt-2 [&_h1]:ml-0 [&_h1]:px-0 [&_h1]:py-0 [&_h1]:text-[2.6rem] [&_h1]:font-bold [&_h1]:leading-tight [&_h2]:mb-1 [&_h2]:mt-2 [&_h2]:ml-0 [&_h2]:px-0 [&_h2]:py-0 [&_h2]:text-[2rem] [&_h2]:font-semibold [&_h2]:leading-tight [&_h1[data-collapsible-heading='true']]:relative [&_h2[data-collapsible-heading='true']]:relative [&_ol]:my-1 [&_ol]:ml-0 [&_ol]:pl-8 [&_p]:my-1 [&_p]:ml-0 [&_p[data-note-style='comment']]:text-slate-400 [&_p[data-note-style='comment']]:italic [&_p[data-note-style='comment']]:line-through [&_p[data-note-style='comment']]:opacity-80 [&_ul]:my-1 [&_ul]:ml-0 [&_ul]:list-disc [&_ul]:pl-8"
+              className="rich-note-editor min-h-[calc(100vh-250px)] w-full rounded-2xl border border-transparent bg-transparent px-5 text-[17px] leading-6 text-foreground outline-none [&_[data-collapse-toggle]]:no-underline [&_[data-collapse-toggle]]:not-italic [&_blockquote]:my-1 [&_blockquote]:ml-0 [&_blockquote]:border-l-4 [&_blockquote]:border-border [&_blockquote]:pl-4 [&_blockquote]:italic [&_h1]:mb-1 [&_h1]:mt-2 [&_h1]:ml-0 [&_h1]:px-0 [&_h1]:py-0 [&_h1]:text-[2.6rem] [&_h1]:font-bold [&_h1]:leading-tight [&_h2]:mb-1 [&_h2]:mt-2 [&_h2]:ml-0 [&_h2]:px-0 [&_h2]:py-0 [&_h2]:text-[2rem] [&_h2]:font-semibold [&_h2]:leading-tight [&_h1[data-collapsible-heading='true']]:relative [&_h2[data-collapsible-heading='true']]:relative [&_ol]:my-1 [&_ol]:ml-0 [&_ol]:pl-8 [&_p]:my-1 [&_p]:ml-0 [&_[data-note-style='comment']]:italic [&_[data-note-style='comment']]:line-through [&_[data-note-style='comment']]:opacity-80 [&_ul]:my-1 [&_ul]:ml-0 [&_ul]:list-disc [&_ul]:pl-8"
               data-placeholder="Escreva livremente aqui..."
             />
           </div>

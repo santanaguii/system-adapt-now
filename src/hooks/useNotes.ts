@@ -411,6 +411,16 @@ export function useNotes(autosaveEnabled: boolean = true) {
 
     setNotes((prev) => {
       const existingNote = prev.find((note) => note.date === dateKey);
+      const existingSingleRichLine =
+        existingNote?.lines.length === 1 &&
+        existingNote.lines[0].type === 'paragraph'
+          ? existingNote.lines[0]
+          : null;
+
+      if (existingSingleRichLine?.content === normalizedHtml) {
+        return prev;
+      }
+
       const existingLineId = existingNote?.lines[0]?.id;
       const nextNote: DailyNote = {
         date: dateKey,
