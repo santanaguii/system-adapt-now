@@ -36,6 +36,14 @@ function stripHtmlTags(content: string) {
   return content.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
+function hasMeaningfulLineContent(line: NoteLine) {
+  return stripHtmlTags(line.content).length > 0;
+}
+
+function hasMeaningfulNoteContent(note: DailyNote) {
+  return note.lines.some(hasMeaningfulLineContent);
+}
+
 export function useNotes(autosaveEnabled: boolean = true) {
   const { user, isAuthenticated } = useAuthContext();
   const [notes, setNotes] = useState<DailyNote[]>([]);
@@ -625,7 +633,7 @@ export function useNotes(autosaveEnabled: boolean = true) {
 
   const allDatesWithNotes = useMemo(() => {
     return notes
-      .filter((n) => n.lines.some((l) => l.content.trim() !== ''))
+      .filter(hasMeaningfulNoteContent)
       .map((n) => n.date)
       .sort()
       .reverse();
@@ -639,7 +647,7 @@ export function useNotes(autosaveEnabled: boolean = true) {
     if (pendingSaves.length === 0 && !hasUnsavedChanges) return true;
 
     // Also include current notes that may not be in pending
-    const notesToSave = pendingSaves.length > 0 ? pendingSaves : notes.filter(n => n.lines.some(l => l.content.trim() !== ''));
+    const notesToSave = pendingSaves.length > 0 ? pendingSaves : notes.filter(hasMeaningfulNoteContent);
     
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current);

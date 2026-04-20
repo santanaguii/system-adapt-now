@@ -106,10 +106,11 @@ const Index = () => {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [newVisualSettingsOpen, setNewVisualSettingsOpen] = useState(false);
   const [settingsPreview, setSettingsPreview] = useState<SettingsPreviewState | null>(null);
-  const [newVisualSection, setNewVisualSection] = useState<NewVisualSection>('activities');
+  const [newVisualSection, setNewVisualSection] = useState<NewVisualSection>('dashboard');
   const [sortOverride, setSortOverride] = useState<SortOption | null>(null);
   const [pendingLineToConvert, setPendingLineToConvert] = useState<NoteLine | null>(null);
   const [showCreateDialogFromNote, setShowCreateDialogFromNote] = useState(false);
+  const [showCreateDialogFromDashboard, setShowCreateDialogFromDashboard] = useState(false);
   const [selectedActivityFromNote, setSelectedActivityFromNote] = useState<Activity | null>(null);
   const [activeNoteSearchFlash, setActiveNoteSearchFlash] = useState<(NoteSearchResult & { flashKey: string }) | null>(null);
   const [pendingSearchSelection, setPendingSearchSelection] = useState<NoteSearchResult | null>(null);
@@ -456,6 +457,9 @@ const Index = () => {
   }, [updateLayoutSettings]);
 
   const handleAppVisualModeChange = useCallback((mode: import('@/types').AppVisualMode) => {
+    if (mode === 'new') {
+      setNewVisualSection('dashboard');
+    }
     void updateGeneralSettings({ appVisualMode: mode });
   }, [updateGeneralSettings]);
 
@@ -540,7 +544,20 @@ const Index = () => {
                 note={currentNote}
                 activities={sortedActivities}
                 tags={effectiveTags}
+                autosaveEnabled={effectiveAutosaveEnabled}
+                hasUnsavedChanges={hasUnsavedChanges}
+                saveStatus={saveStatus}
+                noteTemplates={effectiveNoteTemplates}
                 onOpenSection={handleSectionChange}
+                onReplaceNoteContent={replaceNoteRichContent}
+                onCreateActivity={() => setShowCreateDialogFromDashboard(true)}
+                onToggleComplete={toggleComplete}
+                onOpenActivity={setSelectedActivityFromNote}
+                onSaveNote={saveAllPending}
+                onUndo={undo}
+                onRedo={redo}
+                canUndo={canUndo}
+                canRedo={canRedo}
               />
             </Suspense>
           ) : newVisualSection === 'notes' ? (
@@ -899,6 +916,26 @@ const Index = () => {
         onDiscard={handleDiscardAndContinue}
         onCancel={handleCancelNavigation}
       />
+
+      <Suspense fallback={null}>
+        {showCreateDialogFromDashboard && (
+          <ActivityCreateDialog
+            isOpen={showCreateDialogFromDashboard}
+            onOpenChange={setShowCreateDialogFromDashboard}
+            title="Nova atividade"
+            submitLabel="Criar Atividade"
+            activities={allActivities}
+            tags={effectiveTags}
+            customFields={effectiveCustomFields}
+            formLayout={effectiveListDisplay.formLayout}
+            titleFieldMode="fixed-top"
+            onSubmit={async ({ title, tags, customFields }) => {
+              await addActivity(title, tags.length > 0 ? tags : undefined, customFields);
+              setShowCreateDialogFromDashboard(false);
+            }}
+          />
+        )}
+      </Suspense>
 
       <Suspense fallback={null}>
         {selectedActivityFromNote && (
