@@ -19,6 +19,7 @@ function buildField(overrides: Partial<CustomField>): CustomField {
 }
 
 const baseListDisplay: ActivityListDisplaySettings = {
+  visualMode: 'cards',
   showTags: true,
   showDueDate: true,
   showPriority: true,

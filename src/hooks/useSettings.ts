@@ -97,7 +97,13 @@ export function useSettings() {
   const { user, isAuthenticated } = useAuthContext();
   const [tags, setTags] = useState<Tag[]>([]);
   const [customFields, setCustomFields] = useState<CustomField[]>([]);
-  const [noteTemplates, setNoteTemplates] = useState<NoteTemplate[]>(defaultNoteTemplates);
+  const [noteTemplates, setNoteTemplates] = useState<NoteTemplate[]>(() => {
+    if (typeof window === 'undefined' || !user?.id) {
+      return defaultNoteTemplates;
+    }
+
+    return readNoteTemplates(user.id);
+  });
   const [generalSettings, setGeneralSettings] = useState<{
     allowReopenCompleted: boolean;
     appVisualMode: AppVisualMode;
@@ -110,18 +116,24 @@ export function useSettings() {
     listDisplay: ActivityListDisplaySettings;
     savedFilters: FilterConfig[];
     savedSort: SortConfig;
-  }>({
-    allowReopenCompleted: true,
-    appVisualMode: 'current',
-    defaultSort: 'manual',
-    activityCreationMode: 'detailed',
-    autosaveEnabled: true,
-    noteDateButtonsEnabled: true,
-    quickRescheduleDaysThreshold: 0,
-    layout: defaultLayoutSettings,
-    listDisplay: defaultListDisplay,
-    savedFilters: [],
-    savedSort: defaultSortConfig,
+  }>(() => {
+    const fallback = typeof window !== 'undefined' && user?.id
+      ? readGeneralSettingsFallback(user.id)
+      : null;
+
+    return {
+      allowReopenCompleted: fallback?.allowReopenCompleted ?? true,
+      appVisualMode: fallback?.appVisualMode ?? 'current',
+      defaultSort: fallback?.defaultSort ?? 'manual',
+      activityCreationMode: fallback?.activityCreationMode ?? 'detailed',
+      autosaveEnabled: fallback?.autosaveEnabled ?? true,
+      noteDateButtonsEnabled: fallback?.noteDateButtonsEnabled ?? true,
+      quickRescheduleDaysThreshold: fallback?.quickRescheduleDaysThreshold ?? 0,
+      layout: fallback?.layout ?? defaultLayoutSettings,
+      listDisplay: fallback?.listDisplay ?? defaultListDisplay,
+      savedFilters: fallback?.savedFilters ?? [],
+      savedSort: fallback?.savedSort ?? defaultSortConfig,
+    };
   });
   const [isLoading, setIsLoading] = useState(true);
 

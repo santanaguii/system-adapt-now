@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useTheme } from 'next-themes';
 import { supabase } from '@/integrations/supabase/client';
-import { FontFamily, FontSize, ColorTheme, ThemeMode, MobileLayoutMode, NoteLineSpacing, AppearanceSettings } from '@/types';
+import { FontFamily, FontSize, ColorTheme, ThemeMode, MobileLayoutMode, NoteLineSpacing, AppearanceSettings, AppVisualMode } from '@/types';
 import { upsertUserSettings } from '@/lib/user-settings';
 import { toast } from '@/components/ui/sonner';
 
@@ -12,11 +12,18 @@ interface UserSettingsRow {
   theme_mode: string;
   mobile_layout_mode?: string;
   note_line_spacing?: string;
+  font_family_new?: string;
+  font_size_new?: string;
+  color_theme_new?: string;
+  theme_mode_new?: string;
+  mobile_layout_mode_new?: string;
+  note_line_spacing_new?: string;
 }
 
 interface UseAppearanceOptions {
   userId?: string;
   isAuthenticated?: boolean;
+  appVisualMode?: AppVisualMode;
 }
 
 export const defaultAppearance: AppearanceSettings = {
@@ -30,8 +37,8 @@ export const defaultAppearance: AppearanceSettings = {
 
 const APPEARANCE_FALLBACK_KEY = 'appearance-settings';
 
-function getAppearanceFallbackKey(userId: string) {
-  return `${APPEARANCE_FALLBACK_KEY}:${userId}`;
+function getAppearanceFallbackKey(userId: string, appVisualMode: AppVisualMode) {
+  return `${APPEARANCE_FALLBACK_KEY}:${userId}:${appVisualMode}`;
 }
 
 const fontFamilyMap: Record<FontFamily, string> = {
@@ -128,13 +135,13 @@ function normalizeAppearanceFallback(value: unknown): AppearanceSettings | null 
   };
 }
 
-function readAppearanceFallback(userId?: string) {
-  if (!userId) {
+function readAppearanceFallback(userId?: string, appVisualMode?: AppVisualMode) {
+  if (!userId || !appVisualMode) {
     return null;
   }
 
   try {
-    const raw = window.localStorage.getItem(getAppearanceFallbackKey(userId));
+    const raw = window.localStorage.getItem(getAppearanceFallbackKey(userId, appVisualMode));
     return raw ? normalizeAppearanceFallback(JSON.parse(raw)) : null;
   } catch (error) {
     console.error('Error reading appearance fallback:', error);
@@ -142,9 +149,9 @@ function readAppearanceFallback(userId?: string) {
   }
 }
 
-function writeAppearanceFallback(userId: string, appearance: AppearanceSettings) {
+function writeAppearanceFallback(userId: string, appearance: AppearanceSettings, appVisualMode: AppVisualMode) {
   try {
-    window.localStorage.setItem(getAppearanceFallbackKey(userId), JSON.stringify({
+    window.localStorage.setItem(getAppearanceFallbackKey(userId, appVisualMode), JSON.stringify({
       ...appearance,
       noteLineSpacing: clampNoteLineSpacing(appearance.noteLineSpacing),
     }));
@@ -256,9 +263,15 @@ export function applyAppearanceToDocument(appearance: AppearanceSettings, resolv
 }
 
 export function useAppearance(options: UseAppearanceOptions = {}) {
-  const { userId, isAuthenticated = false } = options;
+  const { userId, isAuthenticated = false, appVisualMode = 'current' } = options;
   const { setTheme, resolvedTheme } = useTheme();
-  const [appearance, setAppearance] = useState<AppearanceSettings>(defaultAppearance);
+  const [appearance, setAppearance] = useState<AppearanceSettings>(() => {
+    if (typeof window === 'undefined' || !isAuthenticated || !userId) {
+      return defaultAppearance;
+    }
+
+    return readAppearanceFallback(userId, appVisualMode) ?? defaultAppearance;
+  });
   const [previewAppearance, setPreviewAppearanceState] = useState<AppearanceSettings | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const effectiveAppearance = previewAppearance ?? appearance;
@@ -272,7 +285,7 @@ export function useAppearance(options: UseAppearanceOptions = {}) {
     }
 
     const loadAppearance = async () => {
-      const appearanceFallback = readAppearanceFallback(userId);
+      const appearanceFallback = readAppearanceFallback(userId, appVisualMode);
       try {
         const { data, error } = await supabase
           .from('user_settings' as never)
@@ -281,27 +294,35 @@ export function useAppearance(options: UseAppearanceOptions = {}) {
           .maybeSingle() as { data: UserSettingsRow | null; error: unknown };
 
         if (!error && data) {
+          const isNewMode = appVisualMode === 'new';
+          const fontFamilyKey = isNewMode ? 'font_family_new' : 'font_family';
+          const fontSizeKey = isNewMode ? 'font_size_new' : 'font_size';
+          const colorThemeKey = isNewMode ? 'color_theme_new' : 'color_theme';
+          const themeModeKey = isNewMode ? 'theme_mode_new' : 'theme_mode';
+          const mobileLayoutModeKey = isNewMode ? 'mobile_layout_mode_new' : 'mobile_layout_mode';
+          const noteLineSpacingKey = isNewMode ? 'note_line_spacing_new' : 'note_line_spacing';
+
           const loaded: AppearanceSettings = {
-            fontFamily: validFontFamilies.has(data.font_family as FontFamily)
-              ? data.font_family as FontFamily
-              : (appearanceFallback?.fontFamily ?? defaultAppearance.fontFamily),
-            fontSize: validFontSizes.has(data.font_size as FontSize)
-              ? data.font_size as FontSize
-              : (appearanceFallback?.fontSize ?? defaultAppearance.fontSize),
-            colorTheme: validColorThemes.has(data.color_theme as ColorTheme)
-              ? data.color_theme as ColorTheme
-              : (appearanceFallback?.colorTheme ?? defaultAppearance.colorTheme),
-            themeMode: validThemeModes.has(data.theme_mode as ThemeMode)
-              ? data.theme_mode as ThemeMode
-              : (appearanceFallback?.themeMode ?? defaultAppearance.themeMode),
-            mobileLayoutMode: validMobileLayoutModes.has(data.mobile_layout_mode as MobileLayoutMode)
-              ? data.mobile_layout_mode as MobileLayoutMode
-              : (appearanceFallback?.mobileLayoutMode ?? defaultAppearance.mobileLayoutMode),
-            noteLineSpacing: data.note_line_spacing == null
-              ? (appearanceFallback?.noteLineSpacing ?? defaultAppearance.noteLineSpacing)
-              : parseNoteLineSpacing(data.note_line_spacing),
+            fontFamily: validFontFamilies.has(data[fontFamilyKey] as FontFamily)
+              ? data[fontFamilyKey] as FontFamily
+              : (isNewMode && data.font_family ? data.font_family as FontFamily : (appearanceFallback?.fontFamily ?? defaultAppearance.fontFamily)),
+            fontSize: validFontSizes.has(data[fontSizeKey] as FontSize)
+              ? data[fontSizeKey] as FontSize
+              : (isNewMode && data.font_size ? data.font_size as FontSize : (appearanceFallback?.fontSize ?? defaultAppearance.fontSize)),
+            colorTheme: validColorThemes.has(data[colorThemeKey] as ColorTheme)
+              ? data[colorThemeKey] as ColorTheme
+              : (isNewMode && data.color_theme ? data.color_theme as ColorTheme : (appearanceFallback?.colorTheme ?? defaultAppearance.colorTheme)),
+            themeMode: validThemeModes.has(data[themeModeKey] as ThemeMode)
+              ? data[themeModeKey] as ThemeMode
+              : (isNewMode && data.theme_mode ? data.theme_mode as ThemeMode : (appearanceFallback?.themeMode ?? defaultAppearance.themeMode)),
+            mobileLayoutMode: validMobileLayoutModes.has(data[mobileLayoutModeKey] as MobileLayoutMode)
+              ? data[mobileLayoutModeKey] as MobileLayoutMode
+              : (isNewMode && data.mobile_layout_mode ? data.mobile_layout_mode as MobileLayoutMode : (appearanceFallback?.mobileLayoutMode ?? defaultAppearance.mobileLayoutMode)),
+            noteLineSpacing: data[noteLineSpacingKey] == null
+              ? (isNewMode && data.note_line_spacing != null ? parseNoteLineSpacing(data.note_line_spacing) : (appearanceFallback?.noteLineSpacing ?? defaultAppearance.noteLineSpacing))
+              : parseNoteLineSpacing(data[noteLineSpacingKey]),
           };
-          writeAppearanceFallback(userId, loaded);
+          writeAppearanceFallback(userId, loaded, appVisualMode);
           setAppearance(loaded);
         } else {
           setAppearance(appearanceFallback ?? defaultAppearance);
@@ -315,7 +336,7 @@ export function useAppearance(options: UseAppearanceOptions = {}) {
     };
 
     loadAppearance();
-  }, [isAuthenticated, userId, setTheme]);
+  }, [isAuthenticated, userId, appVisualMode, setTheme]);
 
   // Apply appearance settings to DOM
   useEffect(() => {
@@ -338,16 +359,17 @@ export function useAppearance(options: UseAppearanceOptions = {}) {
     setAppearance(newAppearance);
 
     if (!userId) return;
-    writeAppearanceFallback(userId, newAppearance);
+    writeAppearanceFallback(userId, newAppearance, appVisualMode);
 
     try {
+      const isNewMode = appVisualMode === 'new';
       const dbUpdates: Record<string, string> = {};
-      if (updates.fontFamily !== undefined) dbUpdates.font_family = updates.fontFamily;
-      if (updates.fontSize !== undefined) dbUpdates.font_size = updates.fontSize;
-      if (updates.colorTheme !== undefined) dbUpdates.color_theme = updates.colorTheme;
-      if (updates.themeMode !== undefined) dbUpdates.theme_mode = updates.themeMode;
-      if (updates.mobileLayoutMode !== undefined) dbUpdates.mobile_layout_mode = updates.mobileLayoutMode;
-      if (updates.noteLineSpacing !== undefined) dbUpdates.note_line_spacing = String(clampNoteLineSpacing(updates.noteLineSpacing));
+      if (updates.fontFamily !== undefined) dbUpdates[isNewMode ? 'font_family_new' : 'font_family'] = updates.fontFamily;
+      if (updates.fontSize !== undefined) dbUpdates[isNewMode ? 'font_size_new' : 'font_size'] = updates.fontSize;
+      if (updates.colorTheme !== undefined) dbUpdates[isNewMode ? 'color_theme_new' : 'color_theme'] = updates.colorTheme;
+      if (updates.themeMode !== undefined) dbUpdates[isNewMode ? 'theme_mode_new' : 'theme_mode'] = updates.themeMode;
+      if (updates.mobileLayoutMode !== undefined) dbUpdates[isNewMode ? 'mobile_layout_mode_new' : 'mobile_layout_mode'] = updates.mobileLayoutMode;
+      if (updates.noteLineSpacing !== undefined) dbUpdates[isNewMode ? 'note_line_spacing_new' : 'note_line_spacing'] = String(clampNoteLineSpacing(updates.noteLineSpacing));
 
       const { error } = await upsertUserSettings(userId, dbUpdates);
 

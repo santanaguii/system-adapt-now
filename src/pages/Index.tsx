@@ -100,7 +100,7 @@ function SectionFallback() {
 
 const Index = () => {
   const { user, signOut } = useAuthContext();
-  const { appearance, updateAppearance, setPreviewAppearance } = useAppearanceContext();
+  const { appearance, isLoading: appearanceIsLoading, updateAppearance, setPreviewAppearance } = useAppearanceContext();
   const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1200);
   const [currentDate, setCurrentDate] = useState(new Date());
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -128,6 +128,7 @@ const Index = () => {
 
   const {
     settings,
+    isLoading: settingsIsLoading,
     addCustomField,
     updateCustomField,
     deleteCustomField,
@@ -512,6 +513,14 @@ const Index = () => {
   const showLayoutSelector = isMobile && effectiveAppVisualMode !== 'new';
 
   const renderContent = () => {
+    if (appearanceIsLoading || settingsIsLoading) {
+      return (
+        <div className="flex h-screen items-center justify-center bg-background">
+          <Loader2 className="h-6 w-6 animate-spin text-primary" />
+        </div>
+      );
+    }
+
     if (effectiveAppVisualMode === 'new') {
       return (
         <div className="flex h-screen flex-col overflow-hidden bg-background">
@@ -565,12 +574,12 @@ const Index = () => {
                 onToggleComplete={toggleComplete}
                 onReorder={reorderActivities}
                 onOpenSettings={() => setSettingsOpen(true)}
+                onUpdateListDisplay={updateListDisplay}
                 sortOption={effectiveSortOption}
                 onSortChange={handleSortChange}
                 allowReopenCompleted={effectiveAllowReopenCompleted}
                 showQuickRescheduleButtons={effectiveNoteDateButtonsEnabled}
                 quickRescheduleDaysThreshold={effectiveQuickRescheduleDaysThreshold}
-                visualVariant="legacy"
               />
             </Suspense>
           )}

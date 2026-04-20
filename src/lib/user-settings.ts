@@ -31,6 +31,7 @@ function isObject(value: unknown): value is Record<string, unknown> {
 }
 
 export const defaultListDisplay: ActivityListDisplaySettings = {
+  visualMode: 'cards',
   showTags: true,
   showDueDate: true,
   showPriority: true,
@@ -269,6 +270,7 @@ export function extractMissingUserSettingsColumn(error: unknown): string | null 
 
 export function normalizeListDisplaySettings(listDisplay: Partial<ActivityListDisplaySettings> | null | undefined): ActivityListDisplaySettings {
   return {
+    visualMode: listDisplay?.visualMode === 'table' ? 'table' : defaultListDisplay.visualMode,
     showTags: listDisplay?.showTags ?? defaultListDisplay.showTags,
     showDueDate: listDisplay?.showDueDate ?? defaultListDisplay.showDueDate,
     showPriority: listDisplay?.showPriority ?? defaultListDisplay.showPriority,

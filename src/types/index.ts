@@ -160,6 +160,7 @@ export interface LayoutSettings {
 
 // Activity list display settings
 export interface ActivityListDisplaySettings {
+  visualMode: 'cards' | 'table';
   showTags: boolean;
   showDueDate: boolean;
   showPriority: boolean;

@@ -91,6 +91,7 @@ describe('general settings fallback', () => {
         showActivities: false,
       },
       listDisplay: {
+        visualMode: 'cards',
         showTags: true,
         showDueDate: false,
         showPriority: true,
@@ -118,6 +119,7 @@ describe('general settings fallback', () => {
         showActivities: false,
       },
       listDisplay: {
+        visualMode: 'cards',
         showTags: true,
         showDueDate: false,
         showPriority: true,

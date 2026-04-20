@@ -4,7 +4,7 @@ import { ActivityItem } from './ActivityItem';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Plus, Filter, ChevronDown, ChevronUp, ArrowUpDown, GripVertical, ChevronRight, X } from 'lucide-react';
+import { Plus, Filter, ChevronDown, ChevronUp, ArrowUpDown, GripVertical, ChevronRight, X, CalendarDays } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -81,6 +81,7 @@ interface ActivityListProps {
   onToggleComplete: (id: string) => void;
   onReorder: (startIndex: number, endIndex: number) => void;
   onOpenSettings: () => void;
+  onUpdateListDisplay?: (updates: Partial<ActivityListDisplaySettings>) => Promise<void> | void;
   sortOption: SortOption;
   onSortChange: (sort: SortOption) => void;
   allowReopenCompleted: boolean;
@@ -362,6 +363,7 @@ export function ActivityList({
   onToggleComplete,
   onReorder,
   onOpenSettings,
+  onUpdateListDisplay,
   sortOption,
   onSortChange,
   allowReopenCompleted,
@@ -807,6 +809,9 @@ export function ActivityList({
     () => ['22px', '28px', 'minmax(280px,1.9fr)', ...tableColumns.map((column) => column.desktopWidth), '92px'].join(' '),
     [tableColumns]
   );
+  const modernVisualMode = listDisplay.visualMode ?? 'cards';
+  const useLegacyLayout = visualVariant === 'legacy';
+  const useInlineTableLayout = !useLegacyLayout && modernVisualMode === 'table';
 
   function renderStackedSummary(
     activity: Activity,
@@ -819,7 +824,7 @@ export function ActivityList({
       .map((column) => {
         const content = column.render(activity, { status, dueDate, priority });
         return content ? (
-          <div key={column.id} className="flex min-w-[104px] flex-col gap-1 rounded-xl border border-[#e6dccf] bg-[#f4ede2] px-3 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.35)] dark:border-border dark:bg-muted/50">
+          <div key={column.id} className="flex min-w-[112px] flex-1 flex-col gap-1 rounded-2xl border border-[#e4d8c8] bg-[#f5efe6] px-3 py-2.5 shadow-[0_1px_0_rgba(255,255,255,0.75)_inset] dark:border-border dark:bg-muted/50">
             <span className="text-[9px] font-semibold uppercase tracking-[0.2em] text-stone-500 dark:text-muted-foreground">{column.mobileLabel || column.label}</span>
             {content}
           </div>
@@ -834,6 +839,55 @@ export function ActivityList({
     return <div className={className}>{visibleItems}</div>;
   }
 
+  function renderCardMeta(activity: Activity, status: ActivityStatus, dueDate: string | null, priority: string | null) {
+    const items: Array<{ id: string; label?: string; value: string; tone?: string }> = [];
+
+    tableColumns.forEach((column) => {
+      if (column.id === 'classification') {
+        const classification = getClassificationBadge(activity, tags, priority, status);
+        items.push({ id: column.id, value: classification.label, tone: 'text-stone-600 dark:text-muted-foreground' });
+        return;
+      }
+
+      if (column.id === 'dueDate') {
+        const dueDateLabel = formatActivityDueDateLabel(dueDate, todayKey, tomorrowKey);
+        items.push({ id: column.id, value: dueDateLabel, tone: getDueDateTone(dueDate, todayKey) });
+        return;
+      }
+
+      const field = tableVisibleFields.find((item) => item.id === column.id);
+      if (!field) {
+        return;
+      }
+
+      const value = activity.customFields[field.id] ?? activity.customFields[field.key];
+      const formattedValue = formatTableFieldValue(field, value) ?? '-';
+      items.push({
+        id: field.id,
+        label: field.name,
+        value: formattedValue,
+        tone: formattedValue === '-' ? 'text-muted-foreground' : 'text-stone-600 dark:text-muted-foreground',
+      });
+    });
+
+    if (items.length === 0) {
+      return null;
+    }
+
+    return (
+      <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-stone-500 dark:text-muted-foreground">
+        {items.map((item, index) => (
+          <div key={item.id} className="flex items-center gap-1.5">
+            {index > 0 ? <span className="text-stone-300 dark:text-border">•</span> : null}
+            {item.id === 'dueDate' ? <CalendarDays className="h-3 w-3" /> : null}
+            {item.label ? <span>{item.label}:</span> : null}
+            <span className={`font-medium ${item.tone ?? 'text-stone-600 dark:text-foreground'}`}>{item.value}</span>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
   function ActivityTableRow({ activity }: { activity: Activity }) {
     const status = getActivityStatus(activity, todayKey);
     const dueDate = typeof activity.customFields.dueDate === 'string' ? normalizeDateKey(activity.customFields.dueDate) : null;
@@ -841,8 +895,122 @@ export function ActivityList({
 
     return (
       <div
+        className="group border-b border-[#e2d6c7] px-4 py-3 transition-colors hover:bg-[#fbf6ef] dark:border-border dark:hover:bg-muted/30"
+        onDoubleClick={() => handleOpenActivityDetail(activity)}
+      >
+        <div className="flex items-start gap-2.5">
+          <div className="hidden h-7 w-5 items-center justify-center pt-0.5 text-stone-400 md:flex">
+            <GripVertical className="h-4 w-4" />
+          </div>
+          <div className="flex h-7 items-center justify-center">
+            <Checkbox
+              checked={activity.completed}
+              onCheckedChange={() => handleToggleComplete(activity.id)}
+              aria-label={activity.completed ? 'Reabrir atividade' : 'Concluir atividade'}
+              className="h-5 w-5 rounded-full border-2"
+              onClick={(event) => event.stopPropagation()}
+              onDoubleClick={(event) => event.stopPropagation()}
+            />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <EditableTableTitle activity={activity} onUpdate={onUpdate} onOpenDetail={handleOpenActivityDetail} />
+                {renderCardMeta(activity, status, dueDate, priority)}
+              </div>
+              <div className="shrink-0">
+                <TableRowActions
+                  activity={activity}
+                  quickActions={null}
+                  onOpenDetail={handleOpenActivityDetail}
+                  onDelete={setDeleteConfirm}
+                />
+              </div>
+            </div>
+            {shouldShowQuickActions(activity) ? (
+              <div className="mt-2 flex flex-wrap gap-2">
+                {quickActions(activity)}
+              </div>
+            ) : null}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  function SortableActivityTableRow({ activity }: { activity: Activity }) {
+    const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: activity.id });
+    const status = getActivityStatus(activity, todayKey);
+    const dueDate = typeof activity.customFields.dueDate === 'string' ? normalizeDateKey(activity.customFields.dueDate) : null;
+    const priority = typeof activity.customFields.priority === 'string' ? activity.customFields.priority : null;
+
+    return (
+      <div
+        ref={setNodeRef}
+        style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 }}
+        className="group border-b border-[#e2d6c7] px-4 py-3 transition-colors hover:bg-[#fbf6ef] dark:border-border dark:hover:bg-muted/30"
+        onDoubleClick={() => handleOpenActivityDetail(activity)}
+      >
+        <div className="flex items-start gap-2.5">
+          <button
+            type="button"
+            className="hidden h-7 w-5 items-center justify-center pt-0.5 text-stone-400 hover:text-stone-600 dark:text-muted-foreground md:flex"
+            {...attributes}
+            {...listeners}
+            aria-label="Arrastar atividade"
+            onDoubleClick={(event) => event.stopPropagation()}
+          >
+            <GripVertical className="h-4 w-4" />
+          </button>
+          <div className="flex h-7 items-center justify-center">
+            <Checkbox
+              checked={activity.completed}
+              onCheckedChange={() => handleToggleComplete(activity.id)}
+              aria-label={activity.completed ? 'Reabrir atividade' : 'Concluir atividade'}
+              className="h-5 w-5 rounded-full border-2"
+              onClick={(event) => event.stopPropagation()}
+              onDoubleClick={(event) => event.stopPropagation()}
+            />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <EditableTableTitle activity={activity} onUpdate={onUpdate} onOpenDetail={handleOpenActivityDetail} />
+                {renderCardMeta(activity, status, dueDate, priority)}
+              </div>
+              <div className="shrink-0">
+                <TableRowActions
+                  activity={activity}
+                  quickActions={null}
+                  onOpenDetail={handleOpenActivityDetail}
+                  onDelete={setDeleteConfirm}
+                />
+              </div>
+            </div>
+            {shouldShowQuickActions(activity) ? (
+              <div className="mt-2 flex flex-wrap gap-2">
+                {quickActions(activity)}
+              </div>
+            ) : null}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const renderCardsRow = (activity: Activity, sortable = false) => {
+    return sortable ? <SortableActivityTableRow key={activity.id} activity={activity} /> : <ActivityTableRow key={activity.id} activity={activity} />;
+  };
+
+  function ActivityInlineTableRow({ activity }: { activity: Activity }) {
+    const status = getActivityStatus(activity, todayKey);
+    const dueDate = typeof activity.customFields.dueDate === 'string' ? normalizeDateKey(activity.customFields.dueDate) : null;
+    const priority = typeof activity.customFields.priority === 'string' ? activity.customFields.priority : null;
+
+    return (
+      <div
         style={{ ['--activity-grid-template' as string]: desktopGridTemplate }}
-        className="group grid min-w-full grid-cols-[auto_auto_minmax(0,1fr)] gap-x-3 gap-y-3 border-b border-[#ded6ca] px-4 py-3 transition-colors hover:bg-[#f8f3eb] dark:border-border dark:hover:bg-muted/40 md:grid-cols-[22px_28px_minmax(0,1fr)_56px] md:items-start md:gap-x-5 md:gap-y-0 xl:[grid-template-columns:var(--activity-grid-template)] xl:items-center"
+        className="group grid min-w-full grid-cols-[auto_auto_minmax(0,1fr)] gap-x-3 gap-y-3 border-b border-[#ded6ca] px-4 py-3 transition-colors hover:bg-[#f8f3eb] dark:border-border dark:hover:bg-muted/40 md:[grid-template-columns:var(--activity-grid-template)] md:items-center md:gap-x-5 md:gap-y-0"
         onDoubleClick={() => handleOpenActivityDetail(activity)}
       >
         <div className="hidden h-8 w-[22px] items-center justify-center text-stone-400 md:inline-flex">
@@ -861,22 +1029,21 @@ export function ActivityList({
         <div className="min-w-0 md:pr-3">
           <div className="flex items-center gap-2">
             <EditableTableTitle activity={activity} onUpdate={onUpdate} onOpenDetail={handleOpenActivityDetail} />
-            <div className="hidden shrink-0 flex-wrap gap-1 xl:flex xl:opacity-0 xl:transition-opacity xl:group-hover:opacity-100 xl:group-focus-within:opacity-100">
+            <div className="hidden shrink-0 flex-wrap gap-1 md:flex md:opacity-0 md:transition-opacity md:group-hover:opacity-100 md:group-focus-within:opacity-100">
               {shouldShowQuickActions(activity) ? quickActions(activity) : null}
             </div>
           </div>
-          <div className="mt-2 flex flex-wrap items-center gap-2 xl:hidden">
-            {shouldShowQuickActions(activity) ? quickActions(activity) : null}
-          </div>
           {renderStackedSummary(activity, status, dueDate, priority, 'mt-2 flex flex-wrap gap-2 md:hidden')}
-          {renderStackedSummary(activity, status, dueDate, priority, 'mt-2 hidden flex-wrap gap-2 md:flex xl:hidden')}
         </div>
         {tableColumns.map((column) => (
-          <div key={column.id} className="hidden min-w-0 items-center text-sm text-stone-700 dark:text-foreground xl:flex">
+          <div key={column.id} className="hidden min-w-0 items-center text-sm text-stone-700 dark:text-foreground md:flex">
             {column.render(activity, { status, dueDate, priority })}
           </div>
         ))}
-        <div className="col-span-full flex flex-wrap items-center justify-end gap-2 pl-10 md:col-span-1 md:pl-0">
+        <div className="col-span-full flex flex-wrap items-center justify-between gap-3 pl-10 md:col-span-1 md:pl-0 md:justify-end">
+          <div className="flex flex-wrap gap-2 md:hidden">
+            {shouldShowQuickActions(activity) ? quickActions(activity) : null}
+          </div>
           <TableRowActions
             activity={activity}
             quickActions={null}
@@ -888,7 +1055,7 @@ export function ActivityList({
     );
   }
 
-  function SortableActivityTableRow({ activity }: { activity: Activity }) {
+  function SortableActivityInlineTableRow({ activity }: { activity: Activity }) {
     const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: activity.id });
     const status = getActivityStatus(activity, todayKey);
     const dueDate = typeof activity.customFields.dueDate === 'string' ? normalizeDateKey(activity.customFields.dueDate) : null;
@@ -898,7 +1065,7 @@ export function ActivityList({
       <div
         ref={setNodeRef}
         style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1, ['--activity-grid-template' as string]: desktopGridTemplate }}
-        className="group grid min-w-full grid-cols-[auto_auto_minmax(0,1fr)] gap-x-3 gap-y-3 border-b border-[#ded6ca] px-4 py-3 transition-colors hover:bg-[#f8f3eb] dark:border-border dark:hover:bg-muted/40 md:grid-cols-[22px_28px_minmax(0,1fr)_56px] md:items-start md:gap-x-5 md:gap-y-0 xl:[grid-template-columns:var(--activity-grid-template)] xl:items-center"
+        className="group grid min-w-full grid-cols-[auto_auto_minmax(0,1fr)] gap-x-3 gap-y-3 border-b border-[#ded6ca] px-4 py-3 transition-colors hover:bg-[#f8f3eb] dark:border-border dark:hover:bg-muted/40 md:[grid-template-columns:var(--activity-grid-template)] md:items-center md:gap-x-5 md:gap-y-0"
         onDoubleClick={() => handleOpenActivityDetail(activity)}
       >
         <button
@@ -924,22 +1091,21 @@ export function ActivityList({
         <div className="min-w-0 md:pr-3">
           <div className="flex items-center gap-2">
             <EditableTableTitle activity={activity} onUpdate={onUpdate} onOpenDetail={handleOpenActivityDetail} />
-            <div className="hidden shrink-0 flex-wrap gap-1 xl:flex xl:opacity-0 xl:transition-opacity xl:group-hover:opacity-100 xl:group-focus-within:opacity-100">
+            <div className="hidden shrink-0 flex-wrap gap-1 md:flex md:opacity-0 md:transition-opacity md:group-hover:opacity-100 md:group-focus-within:opacity-100">
               {shouldShowQuickActions(activity) ? quickActions(activity) : null}
             </div>
           </div>
-          <div className="mt-2 flex flex-wrap items-center gap-2 xl:hidden">
-            {shouldShowQuickActions(activity) ? quickActions(activity) : null}
-          </div>
           {renderStackedSummary(activity, status, dueDate, priority, 'mt-2 flex flex-wrap gap-2 md:hidden')}
-          {renderStackedSummary(activity, status, dueDate, priority, 'mt-2 hidden flex-wrap gap-2 md:flex xl:hidden')}
         </div>
         {tableColumns.map((column) => (
-          <div key={column.id} className="hidden min-w-0 items-center text-sm text-stone-700 dark:text-foreground xl:flex">
+          <div key={column.id} className="hidden min-w-0 items-center text-sm text-stone-700 dark:text-foreground md:flex">
             {column.render(activity, { status, dueDate, priority })}
           </div>
         ))}
-        <div className="col-span-full flex flex-wrap items-center justify-end gap-2 pl-10 md:col-span-1 md:pl-0">
+        <div className="col-span-full flex flex-wrap items-center justify-between gap-3 pl-10 md:col-span-1 md:pl-0 md:justify-end">
+          <div className="flex flex-wrap gap-2 md:hidden">
+            {shouldShowQuickActions(activity) ? quickActions(activity) : null}
+          </div>
           <TableRowActions
             activity={activity}
             quickActions={null}
@@ -951,8 +1117,10 @@ export function ActivityList({
     );
   }
 
-  const renderTableRow = (activity: Activity, sortable = false) => {
-    return sortable ? <SortableActivityTableRow key={activity.id} activity={activity} /> : <ActivityTableRow key={activity.id} activity={activity} />;
+  const renderInlineTableRow = (activity: Activity, sortable = false) => {
+    return sortable
+      ? <SortableActivityInlineTableRow key={activity.id} activity={activity} />
+      : <ActivityInlineTableRow key={activity.id} activity={activity} />;
   };
 
   function SortableLegacyActivityRow({ activity }: { activity: Activity }) {
@@ -1061,15 +1229,40 @@ export function ActivityList({
 
         <div className="mt-3 flex flex-col gap-3">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex flex-wrap gap-2">
-              {viewOptions.map((option) => {
-                return (
-                  <Button key={option.id} variant={viewMode === option.id ? 'default' : 'outline'} size="sm" onClick={() => setViewMode(option.id)}>
-                    {option.label}
-                    <Badge variant="secondary" className="ml-2">{option.count}</Badge>
+            <div className="flex flex-col gap-2">
+              {!useLegacyLayout && onUpdateListDisplay && (
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={modernVisualMode === 'cards' ? 'default' : 'outline'}
+                    className="rounded-full"
+                    onClick={() => void onUpdateListDisplay({ visualMode: 'cards' })}
+                  >
+                    Cards
                   </Button>
-                );
-              })}
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={modernVisualMode === 'table' ? 'default' : 'outline'}
+                    className="rounded-full"
+                    onClick={() => void onUpdateListDisplay({ visualMode: 'table' })}
+                  >
+                    Tabela
+                  </Button>
+                </div>
+              )}
+
+              <div className="flex flex-wrap gap-2">
+                {viewOptions.map((option) => {
+                  return (
+                    <Button key={option.id} variant={viewMode === option.id ? 'default' : 'outline'} size="sm" onClick={() => setViewMode(option.id)}>
+                      {option.label}
+                      <Badge variant="secondary" className="ml-2">{option.count}</Badge>
+                    </Button>
+                  );
+                })}
+              </div>
             </div>
 
             <Button onClick={() => setShowNewActivityDialog(true)} className="w-full lg:w-auto lg:min-w-[180px]">
@@ -1119,12 +1312,12 @@ export function ActivityList({
       )}
 
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-2">
-        <div className={visualVariant === 'legacy' ? 'rounded-[22px] border border-[#d8d0c4] bg-[#fbf7f1] shadow-[0_10px_35px_rgba(82,59,33,0.06)] dark:border-border dark:bg-card' : 'overflow-x-auto rounded-[22px] border border-[#d8d0c4] bg-[#fbf7f1] shadow-[0_10px_35px_rgba(82,59,33,0.06)] dark:border-border dark:bg-card'}>
+        <div className={useLegacyLayout ? 'rounded-[22px] border border-[#d8d0c4] bg-[#fbf7f1] shadow-[0_10px_35px_rgba(82,59,33,0.06)] dark:border-border dark:bg-card' : 'overflow-x-auto rounded-[22px] border border-[#d8d0c4] bg-[#fbf7f1] shadow-[0_10px_35px_rgba(82,59,33,0.06)] dark:border-border dark:bg-card'}>
           <div className="min-w-full">
-            {visualVariant === 'table' && (
+            {useInlineTableLayout && (
               <div
                 style={{ ['--activity-grid-template' as string]: desktopGridTemplate }}
-                className="hidden items-center gap-5 border-b border-[#d8d0c4] bg-[#f3eee6] px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.24em] text-stone-500 dark:border-border dark:bg-muted/40 dark:text-muted-foreground xl:grid xl:[grid-template-columns:var(--activity-grid-template)]"
+                className="hidden items-center gap-5 border-b border-[#d8d0c4] bg-[#f3eee6] px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.24em] text-stone-500 dark:border-border dark:bg-muted/40 dark:text-muted-foreground md:grid md:[grid-template-columns:var(--activity-grid-template)]"
               >
                 <span />
                 <span />
@@ -1135,15 +1328,27 @@ export function ActivityList({
                 <span className="text-right">Acoes</span>
               </div>
             )}
-            <div className={visualVariant === 'legacy' ? 'space-y-1 px-2 py-2' : undefined}>
+            <div className={useLegacyLayout ? 'space-y-2 divide-y divide-border px-2 py-2' : undefined}>
               {canDrag ? (
                 <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
                   <SortableContext items={displayActive.map((activity) => activity.id)} strategy={verticalListSortingStrategy}>
-                    {displayActive.map((activity) => visualVariant === 'legacy' ? renderLegacyRow(activity, true) : renderTableRow(activity, true))}
+                    {displayActive.map((activity) =>
+                      useLegacyLayout
+                        ? renderLegacyRow(activity, true)
+                        : useInlineTableLayout
+                          ? renderInlineTableRow(activity, true)
+                          : renderCardsRow(activity, true)
+                    )}
                   </SortableContext>
                 </DndContext>
               ) : (
-                displayActive.map((activity) => visualVariant === 'legacy' ? renderLegacyRow(activity) : renderTableRow(activity))
+                displayActive.map((activity) =>
+                  useLegacyLayout
+                    ? renderLegacyRow(activity)
+                    : useInlineTableLayout
+                      ? renderInlineTableRow(activity)
+                      : renderCardsRow(activity)
+                )
               )}
             </div>
           </div>

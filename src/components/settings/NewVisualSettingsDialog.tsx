@@ -370,6 +370,33 @@ export function NewVisualSettingsDialog({
                   </p>
                 </div>
 
+                <div className="space-y-3 rounded-xl border bg-muted/20 p-3">
+                  <Label className="text-sm font-medium">Modo de visualizacao</Label>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      variant={draftListDisplay.visualMode === 'cards' ? 'default' : 'outline'}
+                      size="sm"
+                      className="rounded-full"
+                      onClick={() => setDraftListDisplay((prev) => ({ ...prev, visualMode: 'cards' }))}
+                    >
+                      Cards
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={draftListDisplay.visualMode === 'table' ? 'default' : 'outline'}
+                      size="sm"
+                      className="rounded-full"
+                      onClick={() => setDraftListDisplay((prev) => ({ ...prev, visualMode: 'table' }))}
+                    >
+                      Tabela
+                    </Button>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    `Cards` mantem a leitura em blocos. `Tabela` coloca os campos em linha com colunas fixas.
+                  </p>
+                </div>
+
                 <div className="space-y-3">
                   <div className="flex items-center justify-between py-2">
                     <div>

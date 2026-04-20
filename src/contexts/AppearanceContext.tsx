@@ -1,7 +1,7 @@
 import { createContext, useContext, ReactNode } from 'react';
 import { useAppearance } from '@/hooks/useAppearance';
 import { useAuthContext } from '@/contexts/AuthContext';
-import { AppearanceSettings } from '@/types';
+import { AppearanceSettings, AppVisualMode } from '@/types';
 
 interface AppearanceContextType {
   appearance: AppearanceSettings;
@@ -12,11 +12,12 @@ interface AppearanceContextType {
 
 const AppearanceContext = createContext<AppearanceContextType | undefined>(undefined);
 
-export function AppearanceProvider({ children }: { children: ReactNode }) {
+export function AppearanceProvider({ children, appVisualMode }: { children: ReactNode; appVisualMode?: AppVisualMode }) {
   const { user, isAuthenticated } = useAuthContext();
   const appearanceHook = useAppearance({
     userId: user?.id,
     isAuthenticated,
+    appVisualMode: appVisualMode || 'current',
   });
 
   return (
