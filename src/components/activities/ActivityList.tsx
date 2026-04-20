@@ -4,7 +4,7 @@ import { ActivityItem } from './ActivityItem';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Plus, Filter, ChevronDown, ChevronUp, ArrowUpDown, GripVertical, ChevronRight, X, CalendarDays } from 'lucide-react';
+import { Plus, Filter, ChevronDown, ChevronUp, ArrowUpDown, GripVertical, ChevronRight, X, CalendarDays, AlertTriangle, Clock } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -1173,59 +1173,137 @@ export function ActivityList({
     );
   };
 
+  const overdueCount = useMemo(
+    () => activities.active.filter((activity) => {
+      const dueDate = typeof activity.customFields.dueDate === 'string' ? normalizeDateKey(activity.customFields.dueDate) : null;
+      return dueDate && dueDate < todayKey;
+    }).length,
+    [activities.active, todayKey]
+  );
+  const todayCount = useMemo(
+    () => activities.active.filter((activity) => shouldShowInToday(activity, todayKey)).length,
+    [activities.active, todayKey]
+  );
+
+  const handleQuickCreate = (e: React.FormEvent) => {
+    e.preventDefault();
+    const title = newActivityTitle.trim();
+    if (!title) return;
+    const defaults = getCreationDefaults();
+    void onAdd(title, undefined, defaults);
+    setNewActivityTitle('');
+  };
+
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
       <div className="shrink-0 border-b px-4 py-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <h2 className="text-lg font-semibold">Atividades</h2>
+        {/* Linha 1: título + stats + ações */}
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-2xl font-semibold tracking-tight">Atividades</h2>
+            {!useLegacyLayout && (
+              <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+                <span className="flex items-center gap-1">
+                  <span className="inline-block h-1.5 w-1.5 rounded-full bg-primary" />
+                  {activities.active.length} ativas
+                </span>
+                {todayCount > 0 && (
+                  <span className="flex items-center gap-1 text-amber-600 dark:text-amber-400">
+                    <Clock className="h-3 w-3" />
+                    {todayCount} para hoje
+                  </span>
+                )}
+                {overdueCount > 0 && (
+                  <span className="flex items-center gap-1 text-red-600 dark:text-red-400">
+                    <AlertTriangle className="h-3 w-3" />
+                    {overdueCount} vencida{overdueCount > 1 ? 's' : ''}
+                  </span>
+                )}
+                {waitingCount > 0 && (
+                  <span className="flex items-center gap-1 text-stone-500">
+                    <span>·</span>
+                    {waitingCount} aguardando
+                  </span>
+                )}
+              </div>
+            )}
           </div>
           <div className="flex items-center gap-1">
-            <>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="icon" className="h-8 w-8">
-                    <ArrowUpDown className="h-4 w-4" />
-                  </Button>
-                </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuLabel>Ordenar por</DropdownMenuLabel>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuRadioGroup value={sortOption} onValueChange={(value) => onSortChange(value as SortOption)}>
-                    {availableSortOptions.map((option) => (
-                      <DropdownMenuRadioItem key={option} value={option}>
-                        {sortLabels[option]}
-                      </DropdownMenuRadioItem>
-                    ))}
-                    </DropdownMenuRadioGroup>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="icon" className="h-8 w-8">
-                    <Filter className="h-4 w-4" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuLabel>Filtrar por tags</DropdownMenuLabel>
-                  <DropdownMenuSeparator />
-                  {tags.map((tag) => (
-                    <DropdownMenuCheckboxItem
-                      key={tag.id}
-                      checked={selectedTags.includes(tag.id)}
-                      onCheckedChange={() =>
-                        setSelectedTags((prev) => (prev.includes(tag.id) ? prev.filter((id) => id !== tag.id) : [...prev, tag.id]))
-                      }
-                    >
-                      <span className="mr-2 h-2 w-2 rounded-full" style={{ backgroundColor: tag.color }} />
-                      {tag.name}
-                    </DropdownMenuCheckboxItem>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-8 w-8">
+                  <ArrowUpDown className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuLabel>Ordenar por</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuRadioGroup value={sortOption} onValueChange={(value) => onSortChange(value as SortOption)}>
+                  {availableSortOptions.map((option) => (
+                    <DropdownMenuRadioItem key={option} value={option}>
+                      {sortLabels[option]}
+                    </DropdownMenuRadioItem>
                   ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </>
+                </DropdownMenuRadioGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-8 w-8">
+                  <Filter className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuLabel>Filtrar por tags</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {tags.map((tag) => (
+                  <DropdownMenuCheckboxItem
+                    key={tag.id}
+                    checked={selectedTags.includes(tag.id)}
+                    onCheckedChange={() =>
+                      setSelectedTags((prev) => (prev.includes(tag.id) ? prev.filter((id) => id !== tag.id) : [...prev, tag.id]))
+                    }
+                  >
+                    <span className="mr-2 h-2 w-2 rounded-full" style={{ backgroundColor: tag.color }} />
+                    {tag.name}
+                  </DropdownMenuCheckboxItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
+
+        {/* Linha 2: criação rápida (novo visual apenas) */}
+        {!useLegacyLayout && (
+          <form onSubmit={handleQuickCreate} className="mt-3 flex items-center gap-2">
+            <div className="relative flex-1">
+              <input
+                type="text"
+                value={newActivityTitle}
+                onChange={(e) => setNewActivityTitle(e.target.value)}
+                placeholder="Adicionar atividade... (Enter para criar)"
+                className="h-9 w-full rounded-full border border-border bg-muted/30 px-4 pr-10 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+              />
+              {newActivityTitle.trim() && (
+                <button
+                  type="submit"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 flex h-5 w-5 items-center justify-center rounded-full bg-primary text-primary-foreground transition hover:bg-primary/90"
+                >
+                  <Plus className="h-3 w-3" />
+                </button>
+              )}
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-9 shrink-0 rounded-full px-4"
+              onClick={() => setShowNewActivityDialog(true)}
+            >
+              Detalhes
+            </Button>
+          </form>
+        )}
 
         <div className="mt-3 flex flex-col gap-3">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -1265,10 +1343,12 @@ export function ActivityList({
               </div>
             </div>
 
-            <Button onClick={() => setShowNewActivityDialog(true)} className="w-full lg:w-auto lg:min-w-[180px]">
-              <Plus className="mr-2 h-4 w-4" />
-              Nova Atividade
-            </Button>
+            {useLegacyLayout && (
+              <Button onClick={() => setShowNewActivityDialog(true)} className="w-full lg:w-auto lg:min-w-[180px]">
+                <Plus className="mr-2 h-4 w-4" />
+                Nova Atividade
+              </Button>
+            )}
           </div>
 
           {viewMode === 'projects' && (

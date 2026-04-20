@@ -1,13 +1,17 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
-import { format } from 'date-fns';
+import { format, addDays, subDays, isToday } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import {
   Bold,
   CalendarDays,
+  ChevronLeft,
+  ChevronRight,
   Eye,
   EyeOff,
+  FileText,
   Heading1,
   Heading2,
+  HelpCircle,
   Highlighter,
   X,
   Italic,
@@ -15,15 +19,32 @@ import {
   Loader2,
   MessageSquare,
   PaintBucket,
+  PanelLeftClose,
+  PanelLeftOpen,
   Pilcrow,
   Quote,
+  Redo2,
   Save,
   Underline,
+  Undo2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { DailyNote, NoteSearchResult } from '@/types';
+import { DailyNote, NoteSearchResult, NoteTemplate } from '@/types';
 import { SaveStatus } from '@/hooks/useNotes';
 import { NotesSidebar } from './NotesSidebar';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuSeparator,
+  DropdownMenuLabel,
+} from '@/components/ui/dropdown-menu';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
 
 interface NewVisualNotesWorkspaceProps {
   currentDate: Date;
@@ -34,9 +55,14 @@ interface NewVisualNotesWorkspaceProps {
   onSelectSearchResult: (result: NoteSearchResult) => void;
   onReplaceContent: (date: Date, content: string) => void;
   onSave: () => void;
+  onUndo?: () => void;
+  onRedo?: () => void;
+  canUndo?: boolean;
+  canRedo?: boolean;
   autosaveEnabled: boolean;
   hasUnsavedChanges: boolean;
   saveStatus: SaveStatus;
+  noteTemplates?: NoteTemplate[];
 }
 
 type RichBlockStyle = 'paragraph' | 'h1' | 'h2' | 'blockquote' | 'bullet' | 'comment';
@@ -66,6 +92,38 @@ function buildInitialHtml(note: DailyNote) {
 
   const paragraphs = note.lines.map((line) => `<p>${escapeHtml(line.content || '')}</p>`);
   return paragraphs.join('') || '<p></p>';
+}
+
+function templateToHtml(template: NoteTemplate): string {
+  const parts: string[] = [];
+  let i = 0;
+  while (i < template.lines.length) {
+    const line = template.lines[i];
+    if (line.type === 'bullet') {
+      const listItems: string[] = [];
+      while (i < template.lines.length && template.lines[i].type === 'bullet') {
+        listItems.push(`<li>${escapeHtml(template.lines[i].content)}</li>`);
+        i++;
+      }
+      parts.push(`<ul>${listItems.join('')}</ul>`);
+    } else if (line.type === 'title') {
+      parts.push(`<h1>${escapeHtml(line.content)}</h1>`);
+      i++;
+    } else if (line.type === 'subtitle') {
+      parts.push(`<h2>${escapeHtml(line.content)}</h2>`);
+      i++;
+    } else if (line.type === 'quote') {
+      parts.push(`<blockquote>${escapeHtml(line.content)}</blockquote>`);
+      i++;
+    } else if (line.type === 'comment') {
+      parts.push(`<p data-note-style="comment">${escapeHtml(line.content)}</p>`);
+      i++;
+    } else {
+      parts.push(`<p>${escapeHtml(line.content)}</p>`);
+      i++;
+    }
+  }
+  return parts.join('') || '<p></p>';
 }
 
 function getSelectionBlock() {
@@ -527,7 +585,7 @@ function renderSaveStatus(saveStatus: SaveStatus, autosaveEnabled: boolean, hasU
     if (saveStatus === 'error') {
       return <span className="text-destructive">Erro ao salvar</span>;
     }
-    return <span className="text-muted-foreground">{hasUnsavedChanges ? 'Alteracoes nao salvas' : 'Salvamento manual'}</span>;
+    return <span className="text-muted-foreground">{hasUnsavedChanges ? 'Alterações não salvas' : 'Salvamento manual'}</span>;
   }
 
   if (saveStatus === 'saving') {
@@ -544,7 +602,7 @@ function renderSaveStatus(saveStatus: SaveStatus, autosaveEnabled: boolean, hasU
   if (saveStatus === 'error') {
     return <span className="text-destructive">Erro ao salvar</span>;
   }
-  return <span className="text-muted-foreground">Salvamento automatico</span>;
+  return <span className="text-muted-foreground">Salvamento automático</span>;
 }
 
 export function NewVisualNotesWorkspace({
@@ -556,9 +614,14 @@ export function NewVisualNotesWorkspace({
   onSelectSearchResult,
   onReplaceContent,
   onSave,
+  onUndo,
+  onRedo,
+  canUndo = false,
+  canRedo = false,
   autosaveEnabled,
   hasUnsavedChanges,
   saveStatus,
+  noteTemplates = [],
 }: NewVisualNotesWorkspaceProps) {
   const editorRef = useRef<HTMLDivElement | null>(null);
   const savedSelectionRef = useRef<Range | null>(null);
@@ -570,6 +633,7 @@ export function NewVisualNotesWorkspace({
   const [hideComments, setHideComments] = useState(false);
   const [textColor, setTextColor] = useState('#2f241f');
   const [backgroundColor, setBackgroundColor] = useState('#fff4bf');
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   const noteText = useMemo(() => buildInitialHtml(note), [note]);
 
@@ -631,7 +695,7 @@ export function NewVisualNotesWorkspace({
     selection.addRange(savedSelectionRef.current);
   };
 
-  const handleToolbarMouseDown = (event: React.MouseEvent<HTMLElement>) => {
+  const handleToolbarMouseDown = (_event: React.MouseEvent<HTMLElement>) => {
     saveEditorSelection();
   };
 
@@ -834,6 +898,19 @@ export function NewVisualNotesWorkspace({
     persistEditorContent();
   };
 
+  const handleApplyTemplate = (template: NoteTemplate) => {
+    if (!editorRef.current) return;
+    const html = templateToHtml(template);
+    editorRef.current.innerHTML = html;
+    normalizeEmptyStructuralBlocks(editorRef.current);
+    ensureHeadingControls(editorRef.current);
+    applyCollapsedVisibility(editorRef.current, hideComments);
+    syncEditablePlaceholder(editorRef.current, null);
+    persistEditorContent();
+    updateToolbarState();
+    editorRef.current.focus();
+  };
+
   const handleEditorKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
     if (!editorRef.current) {
       return;
@@ -868,6 +945,18 @@ export function NewVisualNotesWorkspace({
         applyBlockStyle(shortcutValue);
         return;
       }
+
+      if (event.key.toLowerCase() === 'z' && onUndo) {
+        event.preventDefault();
+        onUndo();
+        return;
+      }
+
+      if (event.key.toLowerCase() === 'y' && onRedo) {
+        event.preventDefault();
+        onRedo();
+        return;
+      }
     }
 
     if (event.key === 'Enter') {
@@ -877,6 +966,27 @@ export function NewVisualNotesWorkspace({
       }
 
       event.preventDefault();
+
+      const blockIsEmpty = isBlockEmpty(currentBlock);
+      const blockHasFormatting = currentBlock.tagName !== 'P' || isCommentBlock(currentBlock);
+
+      if (blockIsEmpty && blockHasFormatting) {
+        clearCommentStyle(currentBlock);
+        let targetBlock: HTMLElement = currentBlock;
+        if (currentBlock.tagName === 'LI') {
+          targetBlock = replaceListItemWithBlock(currentBlock, 'p') ?? currentBlock;
+        } else if (currentBlock.tagName !== 'P') {
+          targetBlock = replaceBlockTag(currentBlock, 'p');
+        }
+        syncEditablePlaceholder(editorRef.current, targetBlock);
+        ensureHeadingControls(editorRef.current);
+        applyCollapsedVisibility(editorRef.current, hideComments);
+        placeCaretInBlock(targetBlock, 'start');
+        updateToolbarState();
+        persistEditorContent();
+        return;
+      }
+
       const nextBlock =
         currentBlock.tagName === 'LI'
           ? insertListItemAfterBlock(currentBlock)
@@ -908,6 +1018,26 @@ export function NewVisualNotesWorkspace({
     const nextBlock = getNextEditableBlock(currentBlock);
 
     if (event.key === 'Backspace' && isBlockEmpty(currentBlock)) {
+      const hasFormatting = isCommentBlock(currentBlock) || getBaseBlockStyle(currentBlock) !== 'paragraph';
+
+      if (hasFormatting) {
+        event.preventDefault();
+        clearCommentStyle(currentBlock);
+        let targetBlock: HTMLElement = currentBlock;
+        if (currentBlock.tagName === 'LI') {
+          targetBlock = replaceListItemWithBlock(currentBlock, 'p') ?? currentBlock;
+        } else if (currentBlock.tagName !== 'P') {
+          targetBlock = replaceBlockTag(currentBlock, 'p');
+        }
+        syncEditablePlaceholder(editorRef.current, targetBlock);
+        ensureHeadingControls(editorRef.current);
+        applyCollapsedVisibility(editorRef.current, hideComments);
+        placeCaretInBlock(targetBlock, 'start');
+        updateToolbarState();
+        persistEditorContent();
+        return;
+      }
+
       if (!previousBlock && !nextBlock) {
         return;
       }
@@ -974,7 +1104,11 @@ export function NewVisualNotesWorkspace({
         currentBlock.insertBefore(document.createTextNode(' '), insertBeforeNode);
       }
       currentBlock.insertBefore(contentToMove, insertBeforeNode);
+      const nextBlockParentList = nextBlock.tagName === 'LI' ? nextBlock.parentElement : null;
       nextBlock.remove();
+      if (nextBlockParentList && !nextBlockParentList.hasChildNodes()) {
+        nextBlockParentList.remove();
+      }
       syncEditablePlaceholder(editorRef.current, currentBlock);
       ensureHeadingControls(editorRef.current);
       applyCollapsedVisibility(editorRef.current, hideComments);
@@ -984,50 +1118,117 @@ export function NewVisualNotesWorkspace({
     }
   };
 
+  const isTodayDate = isToday(currentDate);
+  const todayDate = new Date();
+
   return (
     <div className="min-h-0 flex flex-1 overflow-hidden bg-[#f6f1e8]">
-      <aside className="w-[320px] shrink-0 border-r bg-background">
-        <NotesSidebar
-          dates={allDatesWithNotes}
-          currentDate={currentDate}
-          onSelectDate={onDateChange}
-          onSearch={onSearch}
-          onSelectSearchResult={onSelectSearchResult}
-          showDateButtons={false}
-        />
-      </aside>
+      {/* Sidebar */}
+      {!sidebarCollapsed && (
+        <aside className="w-[300px] shrink-0 border-r bg-background">
+          <NotesSidebar
+            dates={allDatesWithNotes}
+            currentDate={currentDate}
+            onSelectDate={onDateChange}
+            onSearch={onSearch}
+            onSelectSearchResult={onSelectSearchResult}
+            showDateButtons={false}
+          />
+        </aside>
+      )}
 
       <main className="min-h-0 flex-1 overflow-auto p-3 md:p-4">
         <div className="flex min-h-full flex-col rounded-[28px] border bg-background shadow-sm">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b px-5 py-4">
-            <div>
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <CalendarDays className="h-4 w-4" />
-                <span>{format(currentDate, "d 'de' MMMM 'de' yyyy", { locale: ptBR })}</span>
-              </div>
-              <h2 className="mt-1 text-2xl font-semibold tracking-tight">Anotacoes</h2>
-            </div>
 
-            <div className="flex items-center gap-3 text-sm">
-              <div>{renderSaveStatus(saveStatus, autosaveEnabled, hasUnsavedChanges)}</div>
+          {/* Header */}
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b px-5 py-4">
+            <div className="flex items-center gap-3">
+              {/* Toggle sidebar */}
               <Button
                 type="button"
                 variant="ghost"
-                size="sm"
-                className="h-9 rounded-full px-3"
-                onClick={() => {
-                  const nextValue = !hideComments;
-                  setHideComments(nextValue);
-                  if (editorRef.current) {
-                    applyCollapsedVisibility(editorRef.current, nextValue);
-                  }
-                }}
+                size="icon"
+                className="h-8 w-8 shrink-0 text-muted-foreground"
+                onClick={() => setSidebarCollapsed((v) => !v)}
+                title={sidebarCollapsed ? 'Mostrar calendário' : 'Ocultar calendário'}
               >
-                {hideComments ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
-                {hideComments ? 'Mostrar comentarios' : 'Ocultar comentarios'}
+                {sidebarCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
               </Button>
+
+              {/* Date navigation */}
+              <div className="flex items-center gap-1">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={() => onDateChange(subDays(currentDate, 1))}
+                  title="Dia anterior"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+
+                <div className="flex flex-col items-center min-w-[140px]">
+                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <CalendarDays className="h-3.5 w-3.5" />
+                    <span>{format(currentDate, "d 'de' MMMM 'de' yyyy", { locale: ptBR })}</span>
+                  </div>
+                  <h2 className="text-lg font-semibold tracking-tight leading-tight">
+                    {format(currentDate, 'EEEE', { locale: ptBR }).replace(/^\w/, (c) => c.toUpperCase())}
+                  </h2>
+                </div>
+
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={() => onDateChange(addDays(currentDate, 1))}
+                  title="Próximo dia"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+
+              {!isTodayDate && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-7 rounded-full px-3 text-xs"
+                  onClick={() => onDateChange(todayDate)}
+                >
+                  Hoje
+                </Button>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2 text-sm">
+              <div>{renderSaveStatus(saveStatus, autosaveEnabled, hasUnsavedChanges)}</div>
+
+              {/* Templates */}
+              {noteTemplates.length > 0 && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button type="button" variant="ghost" size="sm" className="h-8 gap-1.5 rounded-full px-3">
+                      <FileText className="h-4 w-4" />
+                      Template
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuLabel>Aplicar template</DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    {noteTemplates.map((template) => (
+                      <DropdownMenuItem key={template.id} onClick={() => handleApplyTemplate(template)}>
+                        {template.name}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
+
               {!autosaveEnabled && (
-                <Button type="button" onClick={onSave} disabled={!hasUnsavedChanges}>
+                <Button type="button" onClick={onSave} disabled={!hasUnsavedChanges} size="sm" className="h-8 rounded-full px-3">
                   <Save className="h-4 w-4" />
                   Salvar
                 </Button>
@@ -1035,125 +1236,100 @@ export function NewVisualNotesWorkspace({
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2 border-b px-5 py-3">
-            <div className="flex flex-wrap items-center gap-1 rounded-xl border bg-muted/25 p-1" onMouseDown={handleToolbarMouseDown}>
-              <Button
-                type="button"
-                variant={activeStyle === 'paragraph' ? 'default' : 'ghost'}
-                size="sm"
-                className="h-8 rounded-lg px-3"
-                onClick={() => applyBlockStyle('paragraph')}
-              >
-                <Pilcrow className="h-4 w-4" />
-                Texto
-              </Button>
-              <Button
-                type="button"
-                variant={activeStyle === 'h1' ? 'default' : 'ghost'}
-                size="sm"
-                className="h-8 rounded-lg px-3"
-                onClick={() => applyBlockStyle('h1')}
-              >
-                <Heading1 className="h-4 w-4" />
-                Titulo
-              </Button>
-              <Button
-                type="button"
-                variant={activeStyle === 'h2' ? 'default' : 'ghost'}
-                size="sm"
-                className="h-8 rounded-lg px-3"
-                onClick={() => applyBlockStyle('h2')}
-              >
-                <Heading2 className="h-4 w-4" />
-                Subtitulo
-              </Button>
-              <Button
-                type="button"
-                variant={activeStyle === 'bullet' ? 'default' : 'ghost'}
-                size="sm"
-                className="h-8 rounded-lg px-3"
-                onClick={() => applyBlockStyle('bullet')}
-              >
-                <List className="h-4 w-4" />
-                Topico
-              </Button>
-              <Button
-                type="button"
-                variant={activeStyle === 'blockquote' ? 'default' : 'ghost'}
-                size="sm"
-                className="h-8 rounded-lg px-3"
-                onClick={() => applyBlockStyle('blockquote')}
-              >
-                <Quote className="h-4 w-4" />
-                Citacao
-              </Button>
-              <Button
-                type="button"
-                variant={activeStyle === 'comment' ? 'default' : 'ghost'}
-                size="sm"
-                className="h-8 rounded-lg px-3"
-                onClick={() => applyBlockStyle('comment')}
-              >
-                <MessageSquare className="h-4 w-4" />
-                Comentario
-              </Button>
+          {/* Toolbar */}
+          <div className="flex flex-wrap items-center gap-2 border-b px-5 py-2.5" onMouseDown={handleToolbarMouseDown}>
+
+            {/* Grupo 1: Estilo de bloco */}
+            <div className="flex flex-wrap items-center gap-0.5 rounded-xl border bg-muted/25 p-1">
+              {([
+                { id: 'paragraph', icon: Pilcrow, label: 'Texto' },
+                { id: 'h1', icon: Heading1, label: 'Título' },
+                { id: 'h2', icon: Heading2, label: 'Subtítulo' },
+                { id: 'bullet', icon: List, label: 'Tópico' },
+                { id: 'blockquote', icon: Quote, label: 'Citação' },
+                { id: 'comment', icon: MessageSquare, label: 'Comentário' },
+              ] as const).map(({ id, icon: Icon, label }) => (
+                <Button
+                  key={id}
+                  type="button"
+                  variant={activeStyle === id ? 'default' : 'ghost'}
+                  size="sm"
+                  className="h-7 rounded-lg px-2 text-xs gap-1"
+                  onClick={() => applyBlockStyle(id as RichBlockStyle)}
+                >
+                  <Icon className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">{label}</span>
+                </Button>
+              ))}
             </div>
 
-            <div className="ml-auto flex items-center gap-1 rounded-xl border bg-muted/25 p-1" onMouseDown={handleToolbarMouseDown}>
+            {/* Separador */}
+            <div className="h-6 w-px bg-border" />
+
+            {/* Grupo 2: Formatação inline */}
+            <div className="flex items-center gap-0.5 rounded-xl border bg-muted/25 p-1">
               <Button
                 type="button"
                 variant={isBoldActive ? 'secondary' : 'ghost'}
                 size="icon"
-                className="h-8 w-8 rounded-lg"
+                className="h-7 w-7 rounded-lg"
                 disabled={!canUseInlineFormatting}
                 onClick={() => runEditorCommand('bold')}
+                title="Negrito (Ctrl+B)"
               >
-                <Bold className="h-4 w-4" />
+                <Bold className="h-3.5 w-3.5" />
               </Button>
               <Button
                 type="button"
                 variant={isItalicActive ? 'secondary' : 'ghost'}
                 size="icon"
-                className="h-8 w-8 rounded-lg"
+                className="h-7 w-7 rounded-lg"
                 disabled={!canUseInlineFormatting}
                 onClick={() => runEditorCommand('italic')}
+                title="Itálico (Ctrl+I)"
               >
-                <Italic className="h-4 w-4" />
+                <Italic className="h-3.5 w-3.5" />
               </Button>
               <Button
                 type="button"
                 variant={isUnderlineActive ? 'secondary' : 'ghost'}
                 size="icon"
-                className="h-8 w-8 rounded-lg"
+                className="h-7 w-7 rounded-lg"
                 disabled={!canUseInlineFormatting}
                 onClick={() => runEditorCommand('underline')}
+                title="Sublinhado (Ctrl+U)"
               >
-                <Underline className="h-4 w-4" />
+                <Underline className="h-3.5 w-3.5" />
               </Button>
-              <label className="flex h-8 items-center gap-2 rounded-lg px-2 text-xs text-muted-foreground hover:bg-background">
-                <PaintBucket className="h-4 w-4" />
-                <input
-                  type="color"
-                  value={textColor}
-                  disabled={!canUseInlineFormatting}
-                  onChange={(event) => {
-                    setTextColor(event.target.value);
-                    runEditorCommand('foreColor', event.target.value);
-                  }}
-                  className="h-5 w-5 cursor-pointer rounded border-0 bg-transparent p-0"
+
+              <div className="mx-1 h-4 w-px bg-border" />
+
+              {/* Cor do texto */}
+              <div className="flex items-center gap-0.5">
+                <label
+                  className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-accent-foreground"
                   title="Cor do texto"
-                />
-              </label>
-              <div className="flex items-center gap-1 rounded-lg px-1">
+                >
+                  <PaintBucket className="h-3.5 w-3.5" />
+                  <input
+                    type="color"
+                    value={textColor}
+                    disabled={!canUseInlineFormatting}
+                    onChange={(event) => {
+                      setTextColor(event.target.value);
+                      runEditorCommand('foreColor', event.target.value);
+                    }}
+                    className="sr-only"
+                  />
+                </label>
                 {PRESET_TEXT_COLORS.map((color) => (
                   <button
                     key={color}
                     type="button"
-                    className="h-5 w-5 rounded-full border border-border/70 transition hover:scale-105"
+                    className="h-4 w-4 rounded-full border border-border/70 transition hover:scale-110"
                     disabled={!canUseInlineFormatting}
                     style={{ backgroundColor: color }}
-                    aria-label={`Aplicar cor de texto ${color}`}
-                    title="Cor predefinida do texto"
+                    title="Cor do texto"
                     onClick={() => {
                       setTextColor(color);
                       runEditorCommand('foreColor', color);
@@ -1161,20 +1337,16 @@ export function NewVisualNotesWorkspace({
                   />
                 ))}
               </div>
-              <div className="flex items-center gap-1 rounded-lg px-1">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 rounded-lg"
-                  disabled={!canUseInlineFormatting}
-                  onClick={() => runEditorCommand('hiliteColor', 'transparent')}
-                  title="Remover cor de fundo"
+
+              <div className="mx-1 h-4 w-px bg-border" />
+
+              {/* Cor de fundo */}
+              <div className="flex items-center gap-0.5">
+                <label
+                  className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                  title="Cor de fundo"
                 >
-                  <X className="h-4 w-4" />
-                </Button>
-                <label className="flex h-8 items-center gap-2 rounded-lg px-2 text-xs text-muted-foreground hover:bg-background">
-                  <Highlighter className="h-4 w-4" />
+                  <Highlighter className="h-3.5 w-3.5" />
                   <input
                     type="color"
                     value={backgroundColor}
@@ -1183,31 +1355,120 @@ export function NewVisualNotesWorkspace({
                       setBackgroundColor(event.target.value);
                       runEditorCommand('hiliteColor', event.target.value);
                     }}
-                    className="h-5 w-5 cursor-pointer rounded border-0 bg-transparent p-0"
-                    title="Cor de fundo"
+                    className="sr-only"
                   />
                 </label>
-              </div>
-              <div className="flex items-center gap-1 rounded-lg px-1">
                 {PRESET_BACKGROUND_COLORS.map((color) => (
                   <button
                     key={color}
                     type="button"
-                    className="h-5 w-5 rounded-full border border-border/70 transition hover:scale-105"
+                    className="h-4 w-4 rounded-full border border-border/70 transition hover:scale-110"
                     disabled={!canUseInlineFormatting}
                     style={{ backgroundColor: color }}
-                    aria-label={`Aplicar cor de fundo ${color}`}
-                    title="Cor predefinida do fundo"
+                    title="Cor de fundo"
                     onClick={() => {
                       setBackgroundColor(color);
                       runEditorCommand('hiliteColor', color);
                     }}
                   />
                 ))}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 rounded-lg"
+                  disabled={!canUseInlineFormatting}
+                  onClick={() => runEditorCommand('hiliteColor', 'transparent')}
+                  title="Remover cor de fundo"
+                >
+                  <X className="h-3 w-3" />
+                </Button>
               </div>
+            </div>
+
+            {/* Separador */}
+            <div className="h-6 w-px bg-border" />
+
+            {/* Grupo 3: Ações */}
+            <div className="flex items-center gap-0.5 rounded-xl border bg-muted/25 p-1">
+              {onUndo && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 rounded-lg"
+                  disabled={!canUndo}
+                  onClick={onUndo}
+                  title="Desfazer (Ctrl+Z)"
+                >
+                  <Undo2 className="h-3.5 w-3.5" />
+                </Button>
+              )}
+              {onRedo && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 rounded-lg"
+                  disabled={!canRedo}
+                  onClick={onRedo}
+                  title="Refazer (Ctrl+Y)"
+                >
+                  <Redo2 className="h-3.5 w-3.5" />
+                </Button>
+              )}
+              <Button
+                type="button"
+                variant={hideComments ? 'secondary' : 'ghost'}
+                size="icon"
+                className="h-7 w-7 rounded-lg"
+                onClick={() => {
+                  const nextValue = !hideComments;
+                  setHideComments(nextValue);
+                  if (editorRef.current) {
+                    applyCollapsedVisibility(editorRef.current, nextValue);
+                  }
+                }}
+                title={hideComments ? 'Mostrar comentários' : 'Ocultar comentários'}
+              >
+                {hideComments ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
+              </Button>
+            </div>
+
+            {/* Help popover */}
+            <div className="ml-auto">
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button type="button" variant="ghost" size="icon" className="h-7 w-7 rounded-lg text-muted-foreground">
+                    <HelpCircle className="h-4 w-4" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent align="end" className="w-72 text-xs">
+                  <p className="mb-2 font-semibold text-sm">Atalhos de teclado</p>
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-muted-foreground">
+                    <span><kbd className="font-medium text-foreground">Ctrl+1</kbd> Título</span>
+                    <span><kbd className="font-medium text-foreground">Ctrl+2</kbd> Subtítulo</span>
+                    <span><kbd className="font-medium text-foreground">Ctrl+3</kbd> Citação</span>
+                    <span><kbd className="font-medium text-foreground">Ctrl+4</kbd> Tópico</span>
+                    <span><kbd className="font-medium text-foreground">Ctrl+5</kbd> Comentário</span>
+                    <span><kbd className="font-medium text-foreground">Ctrl+0</kbd> Texto</span>
+                    <span><kbd className="font-medium text-foreground">Ctrl+B</kbd> Negrito</span>
+                    <span><kbd className="font-medium text-foreground">Ctrl+I</kbd> Itálico</span>
+                    <span><kbd className="font-medium text-foreground">Ctrl+U</kbd> Sublinhado</span>
+                    <span><kbd className="font-medium text-foreground">Ctrl+Z</kbd> Desfazer</span>
+                    <span><kbd className="font-medium text-foreground">Ctrl+Y</kbd> Refazer</span>
+                    <span><kbd className="font-medium text-foreground"># </kbd> → Título</span>
+                    <span><kbd className="font-medium text-foreground">## </kbd> → Subtítulo</span>
+                    <span><kbd className="font-medium text-foreground">- </kbd> → Tópico</span>
+                    <span><kbd className="font-medium text-foreground">&gt; </kbd> → Citação</span>
+                    <span><kbd className="font-medium text-foreground">// </kbd> → Comentário</span>
+                  </div>
+                </PopoverContent>
+              </Popover>
             </div>
           </div>
 
+          {/* Editor */}
           <div className="flex-1 px-5 py-4">
             <div
               ref={editorRef}
@@ -1232,13 +1493,9 @@ export function NewVisualNotesWorkspace({
                 }
                 updateToolbarState();
               }}
-              className="rich-note-editor min-h-[calc(100vh-250px)] w-full rounded-2xl border border-transparent bg-transparent px-5 text-[17px] leading-6 text-foreground outline-none [&_[data-collapse-toggle]]:no-underline [&_[data-collapse-toggle]]:not-italic [&_blockquote]:my-1 [&_blockquote]:ml-0 [&_blockquote]:border-l-4 [&_blockquote]:border-border [&_blockquote]:pl-4 [&_blockquote]:italic [&_h1]:mb-1 [&_h1]:mt-2 [&_h1]:ml-0 [&_h1]:px-0 [&_h1]:py-0 [&_h1]:text-[2.6rem] [&_h1]:font-bold [&_h1]:leading-tight [&_h2]:mb-1 [&_h2]:mt-2 [&_h2]:ml-0 [&_h2]:px-0 [&_h2]:py-0 [&_h2]:text-[2rem] [&_h2]:font-semibold [&_h2]:leading-tight [&_h1[data-collapsible-heading='true']]:relative [&_h2[data-collapsible-heading='true']]:relative [&_ol]:my-1 [&_ol]:ml-0 [&_ol]:pl-8 [&_p]:my-1 [&_p]:ml-0 [&_[data-note-style='comment']]:italic [&_[data-note-style='comment']]:line-through [&_[data-note-style='comment']]:opacity-80 [&_ul]:my-1 [&_ul]:ml-0 [&_ul]:list-disc [&_ul]:pl-8"
+              className="rich-note-editor min-h-[calc(100vh-280px)] w-full rounded-2xl border border-transparent bg-transparent px-5 text-[17px] leading-6 text-foreground outline-none [&_[data-collapse-toggle]]:no-underline [&_[data-collapse-toggle]]:not-italic [&_blockquote]:my-1 [&_blockquote]:ml-0 [&_blockquote]:border-l-4 [&_blockquote]:border-border [&_blockquote]:pl-4 [&_blockquote]:italic [&_h1]:mb-1 [&_h1]:mt-2 [&_h1]:ml-0 [&_h1]:px-0 [&_h1]:py-0 [&_h1]:text-[2.6rem] [&_h1]:font-bold [&_h1]:leading-tight [&_h2]:mb-1 [&_h2]:mt-2 [&_h2]:ml-0 [&_h2]:px-0 [&_h2]:py-0 [&_h2]:text-[2rem] [&_h2]:font-semibold [&_h2]:leading-tight [&_h1[data-collapsible-heading='true']]:relative [&_h2[data-collapsible-heading='true']]:relative [&_ol]:my-1 [&_ol]:ml-0 [&_ol]:pl-8 [&_p]:my-1 [&_p]:ml-0[&_ul]:my-1 [&_ul]:ml-0 [&_ul]:list-disc [&_ul]:pl-8"
               data-placeholder="Escreva livremente aqui..."
             />
-          </div>
-
-          <div className="border-t px-5 py-2 text-xs text-muted-foreground">
-            Atalhos: <span className="font-medium text-foreground">Ctrl+1</span> Título, <span className="font-medium text-foreground">Ctrl+2</span> Subtítulo, <span className="font-medium text-foreground">Ctrl+3</span> Citação, <span className="font-medium text-foreground">Ctrl+4</span> Tópico, <span className="font-medium text-foreground">Ctrl+5</span> Comentário, <span className="font-medium text-foreground">Ctrl+0</span> Texto normal, <span className="font-medium text-foreground">Ctrl+B</span> Negrito, <span className="font-medium text-foreground">Ctrl+I</span> Itálico, <span className="font-medium text-foreground">Ctrl+U</span> Sublinhado.
           </div>
         </div>
       </main>

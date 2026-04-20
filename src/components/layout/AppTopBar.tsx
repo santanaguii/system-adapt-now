@@ -44,9 +44,14 @@ export function AppTopBar({
               <Button
                 key={section.id}
                 type="button"
-                variant={selectedSection === section.id ? 'secondary' : 'ghost'}
+                variant="ghost"
                 size="sm"
-                className="h-9 rounded-full px-3"
+                className={cn(
+                  'h-9 rounded-full px-4 font-medium transition-all',
+                  selectedSection === section.id
+                    ? 'bg-primary text-primary-foreground shadow-sm hover:bg-primary/90'
+                    : 'text-muted-foreground hover:text-foreground'
+                )}
                 onClick={() => onSectionChange(section.id)}
               >
                 {section.label}

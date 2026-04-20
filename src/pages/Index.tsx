@@ -555,9 +555,14 @@ const Index = () => {
                 onSelectSearchResult={handleSelectSearchResult}
                 onReplaceContent={replaceNoteRichContent}
                 onSave={saveAllPending}
+                onUndo={undo}
+                onRedo={redo}
+                canUndo={canUndo}
+                canRedo={canRedo}
                 autosaveEnabled={effectiveAutosaveEnabled}
                 hasUnsavedChanges={hasUnsavedChanges}
                 saveStatus={saveStatus}
+                noteTemplates={effectiveNoteTemplates}
               />
             </Suspense>
           ) : (
