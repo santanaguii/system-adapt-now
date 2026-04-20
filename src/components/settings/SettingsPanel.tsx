@@ -38,7 +38,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Plus, Trash2, X } from 'lucide-react';
 import { AppearanceSettingsTab } from './AppearanceSettings';
 import { LayoutSettingsTab } from './LayoutSettings';
-import { ListDisplaySettingsTab } from './ListDisplaySettings';
+import { TableVisualSettingsTab } from './TableVisualSettings';
 import { ActivityFormLayoutSettingsTab } from './ActivityFormLayoutSettings';
 import { NoteTemplateSettingsTab } from './NoteTemplateSettings';
 import { NoteShortcutsSettingsTab } from './NoteShortcutsSettings';
@@ -588,7 +588,7 @@ export function SettingsPanel({
               <TabsList className="grid h-auto w-full shrink-0 grid-cols-2 gap-1 rounded-xl border bg-muted/20 p-1 sm:grid-cols-5">
                 <TabsTrigger className="whitespace-normal px-2 py-2 text-xs sm:text-sm" value="general">Geral</TabsTrigger>
                 <TabsTrigger className="whitespace-normal px-2 py-2 text-xs sm:text-sm" value="layout">Layout</TabsTrigger>
-                <TabsTrigger className="whitespace-normal px-2 py-2 text-xs sm:text-sm" value="list">Lista</TabsTrigger>
+                <TabsTrigger className="whitespace-normal px-2 py-2 text-xs sm:text-sm" value="table">Tabela</TabsTrigger>
                 <TabsTrigger className="whitespace-normal px-2 py-2 text-xs sm:text-sm" value="appearance">Aparencia</TabsTrigger>
                 <TabsTrigger className="whitespace-normal px-2 py-2 text-xs sm:text-sm" value="notes">Notas</TabsTrigger>
                 <TabsTrigger className="whitespace-normal px-2 py-2 text-xs sm:text-sm" value="shortcuts">Atalhos</TabsTrigger>
@@ -600,24 +600,6 @@ export function SettingsPanel({
             <TabsContent value="general" className="mt-0 space-y-6">
               <div className="space-y-4">
                 <div className="flex items-center justify-between py-2">
-                  <div className="space-y-2">
-                    <div>
-                      <Label className="font-medium">Visual do app</Label>
-                      <p className="text-sm text-muted-foreground">Escolha entre o visual atual e o novo visual em preparacao. A troca so acontece ao salvar.</p>
-                    </div>
-                    <Select value={draftAppVisualMode} onValueChange={(value) => setDraftAppVisualMode(value as AppVisualMode)}>
-                      <SelectTrigger className="h-9 max-w-[240px]">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="current">Visual anterior</SelectItem>
-                        <SelectItem value="new">Novo visual</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between border-t pt-4">
                   <div>
                     <Label className="font-medium">Permitir reabrir concluidas</Label>
                     <p className="text-sm text-muted-foreground">Desmarcar checkbox de atividades concluidas</p>
@@ -669,8 +651,8 @@ export function SettingsPanel({
               </div>
             </TabsContent>
 
-            <TabsContent value="list" className="mt-0">
-              <ListDisplaySettingsTab
+            <TabsContent value="table" className="mt-0">
+              <TableVisualSettingsTab
                 customFields={orderedFields}
                 tags={draftTags}
                 listDisplay={sanitizedDraftListDisplay}

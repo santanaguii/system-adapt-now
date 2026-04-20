@@ -8,6 +8,7 @@ import { UnsavedChangesDialog } from '@/components/UnsavedChangesDialog';
 import { Button } from '@/components/ui/button';
 import { Brand } from '@/components/brand/Brand';
 import { AppTopBar, NewVisualSection } from '@/components/layout/AppTopBar';
+import { AppVisualModeSelector } from '@/components/layout/AppVisualModeSelector';
 import {
   Activity,
   AppearanceSettings,
@@ -43,10 +44,16 @@ const NoteFormattingHints = lazy(() =>
 const NewVisualNotesWorkspace = lazy(() =>
   import('@/components/notes/NewVisualNotesWorkspace').then((module) => ({ default: module.NewVisualNotesWorkspace }))
 );
+const DashboardOverview = lazy(() =>
+  import('@/components/dashboard/DashboardOverview').then((module) => ({ default: module.DashboardOverview }))
+);
 const SettingsPanel = lazy(() =>
   import('@/components/settings/SettingsPanel').then((module) => ({ default: module.SettingsPanel }))
 );
 type SettingsPanelPreview = import('@/components/settings/SettingsPanel').SettingsPanelPreview;
+const NewVisualSettingsDialog = lazy(() =>
+  import('@/components/settings/NewVisualSettingsDialog').then((module) => ({ default: module.NewVisualSettingsDialog }))
+);
 const ActivityCreateDialog = lazy(() =>
   import('@/components/activities/ActivityCreateDialog').then((module) => ({ default: module.ActivityCreateDialog }))
 );
@@ -97,8 +104,9 @@ const Index = () => {
   const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1200);
   const [currentDate, setCurrentDate] = useState(new Date());
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [newVisualSettingsOpen, setNewVisualSettingsOpen] = useState(false);
   const [settingsPreview, setSettingsPreview] = useState<SettingsPreviewState | null>(null);
-  const [newVisualSection, setNewVisualSection] = useState<NewVisualSection>('dashboard');
+  const [newVisualSection, setNewVisualSection] = useState<NewVisualSection>('activities');
   const [sortOverride, setSortOverride] = useState<SortOption | null>(null);
   const [pendingLineToConvert, setPendingLineToConvert] = useState<NoteLine | null>(null);
   const [showCreateDialogFromNote, setShowCreateDialogFromNote] = useState(false);
@@ -215,6 +223,21 @@ const Index = () => {
     applySearchSelection(result);
   }, [applySearchSelection, hasUnsavedChanges, settings.autosaveEnabled]);
 
+  const [pendingSectionChange, setPendingSectionChange] = useState<NewVisualSection | null>(null);
+
+  const handleSectionChange = useCallback((newSection: NewVisualSection) => {
+    if (newSection === newVisualSection) {
+      return;
+    }
+
+    if (hasUnsavedChanges && !settings.autosaveEnabled) {
+      setPendingSectionChange(newSection);
+      setShowUnsavedDialog(true);
+    } else {
+      setNewVisualSection(newSection);
+    }
+  }, [newVisualSection, hasUnsavedChanges, settings.autosaveEnabled]);
+
   const handleSaveAndContinue = useCallback(async () => {
     const didSave = await saveAllPending();
     if (!didSave) {
@@ -230,8 +253,12 @@ const Index = () => {
       setPendingDateChange(null);
       setPendingSearchSelection(null);
     }
+    if (pendingSectionChange) {
+      setNewVisualSection(pendingSectionChange);
+      setPendingSectionChange(null);
+    }
     setShowUnsavedDialog(false);
-  }, [applySearchSelection, clearSearchFlash, pendingDateChange, pendingSearchSelection, saveAllPending]);
+  }, [applySearchSelection, clearSearchFlash, pendingDateChange, pendingSearchSelection, pendingSectionChange, saveAllPending]);
 
   const handleDiscardAndContinue = useCallback(() => {
     discardChanges();
@@ -245,12 +272,17 @@ const Index = () => {
       setPendingDateChange(null);
       setPendingSearchSelection(null);
     }
+    if (pendingSectionChange) {
+      setNewVisualSection(pendingSectionChange);
+      setPendingSectionChange(null);
+    }
     setShowUnsavedDialog(false);
-  }, [applySearchSelection, clearSearchFlash, discardChanges, pendingDateChange, pendingSearchSelection]);
+  }, [applySearchSelection, clearSearchFlash, discardChanges, pendingDateChange, pendingSearchSelection, pendingSectionChange]);
 
   const handleCancelNavigation = useCallback(() => {
     setPendingDateChange(null);
     setPendingSearchSelection(null);
+    setPendingSectionChange(null);
     setShowUnsavedDialog(false);
   }, []);
 
@@ -377,7 +409,7 @@ const Index = () => {
   }, [activityByLineId]);
 
   const effectiveAppearance = settingsPreview?.appearance ?? appearance;
-  const effectiveAppVisualMode = settings.appVisualMode;
+  const effectiveAppVisualMode = settingsPreview?.appVisualMode ?? settings.appVisualMode;
   const effectiveTags = settingsPreview?.tags ?? settings.tags;
   const effectiveCustomFields = settingsPreview?.customFields ?? settings.customFields;
   const effectiveLayout = settingsPreview?.layout ?? settings.layout;
@@ -422,6 +454,10 @@ const Index = () => {
     }, 250);
   }, [updateLayoutSettings]);
 
+  const handleAppVisualModeChange = useCallback((mode: import('@/types').AppVisualMode) => {
+    void updateGeneralSettings({ appVisualMode: mode });
+  }, [updateGeneralSettings]);
+
   const commonProps = {
     username: user?.username || '',
     onSignOut: signOut,
@@ -460,6 +496,7 @@ const Index = () => {
     onToggleComplete: toggleComplete,
     onReorderActivities: reorderActivities,
     onOpenSettings: () => setSettingsOpen(true),
+    onAppVisualModeChange: handleAppVisualModeChange,
     sortOption: effectiveSortOption,
     onSortChange: handleSortChange,
     allowReopenCompleted: effectiveAllowReopenCompleted,
@@ -480,13 +517,24 @@ const Index = () => {
         <div className="flex h-screen flex-col overflow-hidden bg-background">
           <AppTopBar
             username={user?.username || ''}
-            onOpenSettings={() => setSettingsOpen(true)}
+            onOpenSettings={() => setNewVisualSettingsOpen(true)}
             onSignOut={signOut}
             selectedSection={newVisualSection}
-            onSectionChange={setNewVisualSection}
+            onSectionChange={handleSectionChange}
+            toolbarSlot={<AppVisualModeSelector value={effectiveAppVisualMode} onChange={handleAppVisualModeChange} />}
             className="shrink-0"
           />
-          {newVisualSection === 'notes' ? (
+          {newVisualSection === 'dashboard' ? (
+            <Suspense fallback={<SectionFallback />}>
+              <DashboardOverview
+                currentDate={currentDate}
+                note={currentNote}
+                activities={sortedActivities}
+                tags={effectiveTags}
+                onOpenSection={handleSectionChange}
+              />
+            </Suspense>
+          ) : newVisualSection === 'notes' ? (
             <Suspense fallback={<SectionFallback />}>
               <NewVisualNotesWorkspace
                 currentDate={currentDate}
@@ -503,7 +551,28 @@ const Index = () => {
               />
             </Suspense>
           ) : (
-            <div className="flex-1 bg-background" />
+            <Suspense fallback={<SectionFallback />}>
+              <ActivityList
+                currentDate={currentDate}
+                activities={sortedActivities}
+                tags={effectiveTags}
+                customFields={effectiveCustomFields}
+                listDisplay={effectiveListDisplay}
+                savedFilters={effectiveSavedFilters}
+                onAdd={addActivity}
+                onUpdate={updateActivity}
+                onDelete={deleteActivity}
+                onToggleComplete={toggleComplete}
+                onReorder={reorderActivities}
+                onOpenSettings={() => setSettingsOpen(true)}
+                sortOption={effectiveSortOption}
+                onSortChange={handleSortChange}
+                allowReopenCompleted={effectiveAllowReopenCompleted}
+                showQuickRescheduleButtons={effectiveNoteDateButtonsEnabled}
+                quickRescheduleDaysThreshold={effectiveQuickRescheduleDaysThreshold}
+                visualVariant="legacy"
+              />
+            </Suspense>
           )}
         </div>
       );
@@ -649,7 +718,10 @@ const Index = () => {
     return (
       <div className="flex h-screen flex-col overflow-hidden bg-background">
         <div className="shrink-0 flex items-center justify-between border-b bg-muted/30 px-4 py-2">
-          <Brand compact />
+          <div className="flex items-center gap-3">
+            <Brand compact />
+            <AppVisualModeSelector value={effectiveAppVisualMode} onChange={handleAppVisualModeChange} />
+          </div>
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <User className="h-4 w-4" />
@@ -702,6 +774,7 @@ const Index = () => {
                     allowReopenCompleted={effectiveAllowReopenCompleted}
                     showQuickRescheduleButtons={effectiveNoteDateButtonsEnabled}
                     quickRescheduleDaysThreshold={effectiveQuickRescheduleDaysThreshold}
+                    visualVariant="legacy"
                   />
                 </Suspense>
               </ResizablePanel>
@@ -728,6 +801,7 @@ const Index = () => {
                 allowReopenCompleted={effectiveAllowReopenCompleted}
                 showQuickRescheduleButtons={effectiveNoteDateButtonsEnabled}
                 quickRescheduleDaysThreshold={effectiveQuickRescheduleDaysThreshold}
+                visualVariant="legacy"
               />
             </Suspense>
           )}
@@ -748,6 +822,25 @@ const Index = () => {
           />
         </Suspense>
       )}
+
+      <Suspense fallback={null}>
+        {newVisualSettingsOpen && (
+          <NewVisualSettingsDialog
+            isOpen={newVisualSettingsOpen}
+            onClose={() => setNewVisualSettingsOpen(false)}
+            customFields={settings.customFields}
+            tags={settings.tags}
+            listDisplay={settings.listDisplay}
+            onAddField={addCustomField}
+            onUpdateField={updateCustomField}
+            onDeleteField={deleteCustomField}
+            onAddTag={addTag}
+            onUpdateTag={updateTag}
+            onDeleteTag={deleteTag}
+            onUpdateListDisplay={updateListDisplay}
+          />
+        )}
+      </Suspense>
 
       <Suspense fallback={null}>
         {settingsOpen && (

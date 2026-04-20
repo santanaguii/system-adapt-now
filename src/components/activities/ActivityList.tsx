@@ -1,12 +1,10 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Activity, Tag, CustomField, SortOption, ActivityListDisplaySettings, FilterConfig } from '@/types';
 import { ActivityItem } from './ActivityItem';
-import { ActivitySchedule } from './ActivitySchedule';
-import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Plus, Filter, Settings, ChevronDown, ChevronUp, Search, ArrowUpDown, CalendarRange, ListTodo } from 'lucide-react';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Plus, Filter, ChevronDown, ChevronUp, ArrowUpDown, GripVertical, ChevronRight, X } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -44,7 +42,6 @@ import {
   useSortable,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   ACTIVITY_META,
   buildDependencySyncUpdates,
@@ -57,7 +54,9 @@ import {
   getScheduledDate,
   shouldShowInToday,
 } from '@/lib/activity-meta';
-import { addDaysToDateKey, endOfMonthDateKey, getDateKeyInTimeZone, normalizeDateKey } from '@/lib/date';
+import { addDaysToDateKey, endOfMonthDateKey, getDateKeyInTimeZone, normalizeDateKey, parseDateKey } from '@/lib/date';
+import { format } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
 
 const ActivityDetail = lazy(() =>
   import('./ActivityDetail').then((module) => ({ default: module.ActivityDetail }))
@@ -87,6 +86,7 @@ interface ActivityListProps {
   allowReopenCompleted: boolean;
   showQuickRescheduleButtons?: boolean;
   quickRescheduleDaysThreshold?: number;
+  visualVariant?: 'table' | 'legacy';
 }
 
 interface SelectedActivityState {
@@ -94,53 +94,230 @@ interface SelectedActivityState {
   readOnly: boolean;
 }
 
-function SortableActivityItem({
+function EditableTableTitle({
   activity,
-  tags,
-  customFields,
-  listDisplay,
-  onToggleComplete,
   onUpdate,
-  onDelete,
-  onDoubleClick,
-  allowReopen,
-  quickActions,
-  completionState,
+  onOpenDetail,
 }: {
   activity: Activity;
-  tags: Tag[];
-  customFields: CustomField[];
-  listDisplay: ActivityListDisplaySettings;
-  onToggleComplete: (id: string) => void;
   onUpdate: (id: string, updates: Partial<Activity>) => void;
-  onDelete: (id: string) => void;
-  onDoubleClick: (activity: Activity) => void;
-  allowReopen: boolean;
-  quickActions?: React.ReactNode;
-  completionState?: 'idle' | 'transitioning';
+  onOpenDetail: (activity: Activity) => void;
 }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: activity.id });
+  const [isEditing, setIsEditing] = useState(false);
+  const [editValue, setEditValue] = useState(activity.title);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setEditValue(activity.title);
+  }, [activity.title]);
+
+  useEffect(() => {
+    if (isEditing && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, [isEditing]);
+
+  const handleSave = () => {
+    const trimmedValue = editValue.trim();
+    if (trimmedValue) {
+      onUpdate(activity.id, { title: trimmedValue });
+    } else {
+      setEditValue(activity.title);
+    }
+    setIsEditing(false);
+  };
+
+  const handleCancel = () => {
+    setEditValue(activity.title);
+    setIsEditing(false);
+  };
+
+  if (isEditing) {
+    return (
+      <input
+        ref={inputRef}
+        type="text"
+        value={editValue}
+        onChange={(event) => setEditValue(event.target.value)}
+        onBlur={handleSave}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') {
+            handleSave();
+          } else if (event.key === 'Escape') {
+            handleCancel();
+          }
+        }}
+        className="w-full border-none bg-transparent text-sm font-semibold text-foreground outline-none"
+        onClick={(event) => event.stopPropagation()}
+        onDoubleClick={(event) => event.stopPropagation()}
+      />
+    );
+  }
 
   return (
-    <div
-      ref={setNodeRef}
-      style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 }}
-      {...attributes}
+    <p
+      className="truncate cursor-text text-sm font-semibold text-foreground"
+      onClick={(event) => {
+        event.stopPropagation();
+        setIsEditing(true);
+      }}
+      onDoubleClick={(event) => {
+        event.stopPropagation();
+        onOpenDetail(activity);
+      }}
     >
-      <ActivityItem
-        activity={activity}
-        tags={tags}
-        customFields={customFields}
-        listDisplay={listDisplay}
-        onToggleComplete={onToggleComplete}
-        onUpdate={onUpdate}
-        onDelete={onDelete}
-        onDoubleClick={onDoubleClick}
-        dragHandleProps={listeners}
-        allowReopen={allowReopen}
-        quickActions={quickActions}
-        completionState={completionState}
-      />
+      {activity.title}
+    </p>
+  );
+}
+
+function formatTableFieldValue(field: CustomField, value: unknown) {
+  if (value === null || value === undefined || value === '' || typeof value === 'object') {
+    return null;
+  }
+
+  if (field.type === 'date' && typeof value === 'string') {
+    const normalizedValue = normalizeDateKey(value);
+    return normalizedValue ? format(parseDateKey(normalizedValue), 'd MMM', { locale: ptBR }) : value;
+  }
+
+  if (field.type === 'boolean') {
+    return value ? 'Sim' : 'Nao';
+  }
+
+  if (field.type === 'currency' && typeof value === 'number') {
+    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
+  }
+
+  return String(value);
+}
+
+function formatActivityDueDateLabel(dueDate: string | null, todayKey: string, tomorrowKey: string) {
+  if (!dueDate) {
+    return 'Sem prazo';
+  }
+
+  if (dueDate === todayKey) {
+    return 'hoje';
+  }
+
+  if (dueDate === tomorrowKey) {
+    return 'amanha';
+  }
+
+  return format(parseDateKey(dueDate), 'dd/MM', { locale: ptBR });
+}
+
+function getDueDateTone(dueDate: string | null, todayKey: string) {
+  if (!dueDate) {
+    return 'text-muted-foreground';
+  }
+
+  if (dueDate < todayKey) {
+    return 'text-red-600 dark:text-red-400';
+  }
+
+  if (dueDate === todayKey) {
+    return 'text-orange-600 dark:text-orange-300';
+  }
+
+  return 'text-foreground';
+}
+
+function getClassificationBadge(
+  activity: Activity,
+  tags: Tag[],
+  priority: string | null,
+  status: ActivityStatus
+) {
+  const firstTag = tags.find((tag) => activity.tags.includes(tag.id));
+
+  if (firstTag) {
+    return {
+      label: firstTag.name,
+      className: '',
+      style: {
+        backgroundColor: `${firstTag.color}18`,
+        color: firstTag.color,
+      } as React.CSSProperties,
+    };
+  }
+
+  if (priority) {
+    const normalized = priority.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    const map: Record<string, { label: string; className: string }> = {
+      alta: { label: priority, className: 'bg-red-500/10 text-red-700 dark:text-red-300' },
+      media: { label: priority, className: 'bg-amber-500/10 text-amber-700 dark:text-amber-300' },
+      baixa: { label: priority, className: 'bg-stone-500/10 text-stone-700 dark:text-stone-300' },
+    };
+    return {
+      label: map[normalized]?.label ?? priority,
+      className: map[normalized]?.className ?? 'bg-stone-500/10 text-stone-700 dark:text-stone-300',
+      style: undefined,
+    };
+  }
+
+  return {
+    label: activityStatusConfig[status].label,
+    className:
+      status === 'overdue'
+        ? 'bg-red-500/10 text-red-700 dark:text-red-300'
+        : status === 'onTrack'
+          ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+          : 'bg-stone-500/10 text-stone-700 dark:text-stone-300',
+    style: undefined,
+  };
+}
+
+type TableColumn = {
+  id: string;
+  label: string;
+  desktopWidth: string;
+  mobileLabel?: string;
+  render: (activity: Activity, context: { status: ActivityStatus; dueDate: string | null; priority: string | null }) => React.ReactNode;
+};
+
+function TableRowActions({
+  activity,
+  quickActions,
+  onOpenDetail,
+  onDelete,
+}: {
+  activity: Activity;
+  quickActions: React.ReactNode;
+  onOpenDetail: (activity: Activity) => void;
+  onDelete: (id: string) => void;
+}) {
+  return (
+    <div className="flex items-center justify-end gap-2">
+      {quickActions ? <div className="flex flex-wrap justify-end gap-2">{quickActions}</div> : null}
+      <Button
+        variant="ghost"
+        size="icon"
+        className="h-8 w-8 shrink-0 text-muted-foreground"
+        onClick={(event) => {
+          event.stopPropagation();
+          onOpenDetail(activity);
+        }}
+        onDoubleClick={(event) => event.stopPropagation()}
+        title="Abrir detalhes"
+      >
+        <ChevronRight className="h-4 w-4" />
+      </Button>
+      <Button
+        variant="ghost"
+        size="icon"
+        className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive"
+        onClick={(event) => {
+          event.stopPropagation();
+          onDelete(activity.id);
+        }}
+        onDoubleClick={(event) => event.stopPropagation()}
+        title="Excluir atividade"
+      >
+        <X className="h-4 w-4" />
+      </Button>
     </div>
   );
 }
@@ -150,8 +327,30 @@ function getRelevantDate(activity: Activity) {
   return dueDate || getScheduledDate(activity);
 }
 
+type ActivityStatus = 'overdue' | 'onTrack' | 'noDueDate';
+
+const activityStatusConfig: Record<ActivityStatus, { label: string; color: string }> = {
+  overdue: { label: 'Atrasada', color: 'border-rose-500/80 bg-rose-500/10 text-rose-600' },
+  onTrack: { label: 'Em dia', color: 'border-emerald-500/80 bg-emerald-500/10 text-emerald-700' },
+  noDueDate: { label: 'Sem prazo', color: 'border-slate-500/80 bg-slate-500/10 text-slate-700' },
+};
+
+const getActivityStatus = (activity: Activity, todayKey: string): ActivityStatus => {
+  const dueDate = typeof activity.customFields.dueDate === 'string' ? normalizeDateKey(activity.customFields.dueDate) : null;
+  const blockedBy = getBlockedBy(activity);
+
+  if (!dueDate || Boolean(blockedBy)) {
+    return 'noDueDate';
+  }
+
+  if (dueDate < todayKey) {
+    return 'overdue';
+  }
+
+  return 'onTrack';
+};
+
 export function ActivityList({
-  currentDate,
   activities,
   tags,
   customFields,
@@ -168,14 +367,13 @@ export function ActivityList({
   allowReopenCompleted,
   showQuickRescheduleButtons = true,
   quickRescheduleDaysThreshold = 0,
+  visualVariant = 'table',
 }: ActivityListProps) {
-  const [panelMode, setPanelMode] = useState<'list' | 'schedule'>('list');
   const [newActivityTitle, setNewActivityTitle] = useState('');
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [selectedActivityState, setSelectedActivityState] = useState<SelectedActivityState | null>(null);
   const [showCompleted, setShowCompleted] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  const [isSearching, setIsSearching] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [showNewActivityDialog, setShowNewActivityDialog] = useState(false);
   const [newActivityTags, setNewActivityTags] = useState<string[]>([]);
@@ -227,6 +425,9 @@ export function ActivityList({
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     if (over && active.id !== over.id) {
+      if (sortOption !== 'manual') {
+        onSortChange('manual');
+      }
       const oldIndex = activities.active.findIndex((activity) => activity.id === active.id);
       const newIndex = activities.active.findIndex((activity) => activity.id === over.id);
       if (oldIndex !== -1 && newIndex !== -1) {
@@ -415,7 +616,7 @@ export function ActivityList({
       <Button
         size="sm"
         variant="outline"
-        className="h-7 px-2 text-xs"
+        className="h-6 rounded-full border-[#dccfbf] bg-white/80 px-2 text-[11px] font-medium text-stone-700 hover:bg-white"
         onClick={(event) => {
           event.stopPropagation();
           onUpdate(activity.id, { customFields: { dueDate: todayKey, ...createMetaPatch({ [ACTIVITY_META.bucket]: 'today' }) } });
@@ -427,7 +628,7 @@ export function ActivityList({
       <Button
         size="sm"
         variant="outline"
-        className="h-7 px-2 text-xs"
+        className="h-6 rounded-full border-[#dccfbf] bg-white/80 px-2 text-[11px] font-medium text-stone-700 hover:bg-white"
         onClick={(event) => {
           event.stopPropagation();
           onUpdate(activity.id, { customFields: { dueDate: tomorrowKey, ...createMetaPatch({ [ACTIVITY_META.bucket]: 'upcoming' }) } });
@@ -439,7 +640,7 @@ export function ActivityList({
       <Button
         size="sm"
         variant="outline"
-        className="h-7 px-2 text-xs"
+        className="h-6 rounded-full border-[#dccfbf] bg-white/80 px-2 text-[11px] font-medium text-stone-700 hover:bg-white"
         onClick={(event) => {
           event.stopPropagation();
           onUpdate(activity.id, { customFields: { dueDate: nextWeekKey, ...createMetaPatch({ [ACTIVITY_META.bucket]: 'upcoming' }) } });
@@ -451,7 +652,7 @@ export function ActivityList({
       <Button
         size="sm"
         variant="outline"
-        className="h-7 px-2 text-xs"
+        className="h-6 rounded-full border-[#dccfbf] bg-white/80 px-2 text-[11px] font-medium text-stone-700 hover:bg-white"
         onClick={(event) => {
           event.stopPropagation();
           onUpdate(activity.id, { customFields: { dueDate: null, ...createMetaPatch({ [ACTIVITY_META.bucket]: 'someday' }) } });
@@ -545,20 +746,222 @@ export function ActivityList({
     });
   }, []);
 
-  const handleOpenCalendarActivityDetail = useCallback((activity: Activity) => {
-    setSelectedActivityState({
-      id: activity.id,
-      readOnly: true,
-    });
-  }, []);
+  const tableVisibleFields = useMemo(
+    () => customFields.filter((field) => field.enabled && (listDisplay.visibleFieldIds || []).includes(field.id)),
+    [customFields, listDisplay.visibleFieldIds]
+  );
+  const tableColumns = useMemo<TableColumn[]>(() => {
+    const columns: TableColumn[] = [];
 
-  const renderActivity = (activity: Activity, sortable = false) => {
+    if (listDisplay.showTags || listDisplay.showPriority) {
+      columns.push({
+        id: 'classification',
+        label: 'Classificacao',
+        desktopWidth: '120px',
+        mobileLabel: 'Classificacao',
+        render: (activity, context) => {
+          const classification = getClassificationBadge(activity, tags, context.priority, context.status);
+          return (
+            <span
+              className={`inline-flex rounded-md px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] ${classification.className}`}
+              style={classification.style}
+            >
+              {classification.label}
+            </span>
+          );
+        },
+      });
+    }
+
+    tableVisibleFields.forEach((field) => {
+      columns.push({
+        id: field.id,
+        label: field.name,
+        desktopWidth: '120px',
+        mobileLabel: field.name,
+        render: (activity) => {
+          const value = activity.customFields[field.id] ?? activity.customFields[field.key];
+          const formattedValue = formatTableFieldValue(field, value);
+          return formattedValue ? <span className="truncate">{formattedValue}</span> : <span className="text-muted-foreground">-</span>;
+        },
+      });
+    });
+
+    if (listDisplay.showDueDate) {
+      columns.push({
+        id: 'dueDate',
+        label: 'Prazo',
+        desktopWidth: '108px',
+        mobileLabel: 'Prazo',
+        render: (_activity, context) => {
+          const dueDateLabel = formatActivityDueDateLabel(context.dueDate, todayKey, tomorrowKey);
+          const dueDateTone = getDueDateTone(context.dueDate, todayKey);
+          return <span className={`font-semibold ${dueDateTone}`}>{dueDateLabel}</span>;
+        },
+      });
+    }
+
+    return columns;
+  }, [listDisplay.showDueDate, listDisplay.showPriority, listDisplay.showTags, tableVisibleFields, tags, todayKey, tomorrowKey]);
+  const desktopGridTemplate = useMemo(
+    () => ['22px', '28px', 'minmax(280px,1.9fr)', ...tableColumns.map((column) => column.desktopWidth), '92px'].join(' '),
+    [tableColumns]
+  );
+
+  function renderStackedSummary(
+    activity: Activity,
+    status: ActivityStatus,
+    dueDate: string | null,
+    priority: string | null,
+    className: string
+  ) {
+    const visibleItems = tableColumns
+      .map((column) => {
+        const content = column.render(activity, { status, dueDate, priority });
+        return content ? (
+          <div key={column.id} className="flex min-w-[104px] flex-col gap-1 rounded-xl border border-[#e6dccf] bg-[#f4ede2] px-3 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.35)] dark:border-border dark:bg-muted/50">
+            <span className="text-[9px] font-semibold uppercase tracking-[0.2em] text-stone-500 dark:text-muted-foreground">{column.mobileLabel || column.label}</span>
+            {content}
+          </div>
+        ) : null;
+      })
+      .filter(Boolean);
+
+    if (visibleItems.length === 0) {
+      return null;
+    }
+
+    return <div className={className}>{visibleItems}</div>;
+  }
+
+  function ActivityTableRow({ activity }: { activity: Activity }) {
+    const status = getActivityStatus(activity, todayKey);
+    const dueDate = typeof activity.customFields.dueDate === 'string' ? normalizeDateKey(activity.customFields.dueDate) : null;
+    const priority = typeof activity.customFields.priority === 'string' ? activity.customFields.priority : null;
+
+    return (
+      <div
+        style={{ ['--activity-grid-template' as string]: desktopGridTemplate }}
+        className="group grid min-w-full grid-cols-[auto_auto_minmax(0,1fr)] gap-x-3 gap-y-3 border-b border-[#ded6ca] px-4 py-3 transition-colors hover:bg-[#f8f3eb] dark:border-border dark:hover:bg-muted/40 md:grid-cols-[22px_28px_minmax(0,1fr)_56px] md:items-start md:gap-x-5 md:gap-y-0 xl:[grid-template-columns:var(--activity-grid-template)] xl:items-center"
+        onDoubleClick={() => handleOpenActivityDetail(activity)}
+      >
+        <div className="hidden h-8 w-[22px] items-center justify-center text-stone-400 md:inline-flex">
+          <GripVertical className="h-4 w-4" />
+        </div>
+        <div className="flex items-center justify-center">
+          <Checkbox
+            checked={activity.completed}
+            onCheckedChange={() => handleToggleComplete(activity.id)}
+            aria-label={activity.completed ? 'Reabrir atividade' : 'Concluir atividade'}
+            className="h-5 w-5 rounded-full border-2"
+            onClick={(event) => event.stopPropagation()}
+            onDoubleClick={(event) => event.stopPropagation()}
+          />
+        </div>
+        <div className="min-w-0 md:pr-3">
+          <div className="flex items-center gap-2">
+            <EditableTableTitle activity={activity} onUpdate={onUpdate} onOpenDetail={handleOpenActivityDetail} />
+            <div className="hidden shrink-0 flex-wrap gap-1 xl:flex xl:opacity-0 xl:transition-opacity xl:group-hover:opacity-100 xl:group-focus-within:opacity-100">
+              {shouldShowQuickActions(activity) ? quickActions(activity) : null}
+            </div>
+          </div>
+          <div className="mt-2 flex flex-wrap items-center gap-2 xl:hidden">
+            {shouldShowQuickActions(activity) ? quickActions(activity) : null}
+          </div>
+          {renderStackedSummary(activity, status, dueDate, priority, 'mt-2 flex flex-wrap gap-2 md:hidden')}
+          {renderStackedSummary(activity, status, dueDate, priority, 'mt-2 hidden flex-wrap gap-2 md:flex xl:hidden')}
+        </div>
+        {tableColumns.map((column) => (
+          <div key={column.id} className="hidden min-w-0 items-center text-sm text-stone-700 dark:text-foreground xl:flex">
+            {column.render(activity, { status, dueDate, priority })}
+          </div>
+        ))}
+        <div className="col-span-full flex flex-wrap items-center justify-end gap-2 pl-10 md:col-span-1 md:pl-0">
+          <TableRowActions
+            activity={activity}
+            quickActions={null}
+            onOpenDetail={handleOpenActivityDetail}
+            onDelete={setDeleteConfirm}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  function SortableActivityTableRow({ activity }: { activity: Activity }) {
+    const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: activity.id });
+    const status = getActivityStatus(activity, todayKey);
+    const dueDate = typeof activity.customFields.dueDate === 'string' ? normalizeDateKey(activity.customFields.dueDate) : null;
+    const priority = typeof activity.customFields.priority === 'string' ? activity.customFields.priority : null;
+
+    return (
+      <div
+        ref={setNodeRef}
+        style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1, ['--activity-grid-template' as string]: desktopGridTemplate }}
+        className="group grid min-w-full grid-cols-[auto_auto_minmax(0,1fr)] gap-x-3 gap-y-3 border-b border-[#ded6ca] px-4 py-3 transition-colors hover:bg-[#f8f3eb] dark:border-border dark:hover:bg-muted/40 md:grid-cols-[22px_28px_minmax(0,1fr)_56px] md:items-start md:gap-x-5 md:gap-y-0 xl:[grid-template-columns:var(--activity-grid-template)] xl:items-center"
+        onDoubleClick={() => handleOpenActivityDetail(activity)}
+      >
+        <button
+          type="button"
+          className="hidden h-8 w-[22px] items-center justify-center text-stone-400 hover:text-stone-600 dark:text-muted-foreground md:inline-flex"
+          {...attributes}
+          {...listeners}
+          aria-label="Arrastar atividade"
+          onDoubleClick={(event) => event.stopPropagation()}
+        >
+          <GripVertical className="h-4 w-4" />
+        </button>
+        <div className="flex items-center justify-center">
+          <Checkbox
+            checked={activity.completed}
+            onCheckedChange={() => handleToggleComplete(activity.id)}
+            aria-label={activity.completed ? 'Reabrir atividade' : 'Concluir atividade'}
+            className="h-5 w-5 rounded-full border-2"
+            onClick={(event) => event.stopPropagation()}
+            onDoubleClick={(event) => event.stopPropagation()}
+          />
+        </div>
+        <div className="min-w-0 md:pr-3">
+          <div className="flex items-center gap-2">
+            <EditableTableTitle activity={activity} onUpdate={onUpdate} onOpenDetail={handleOpenActivityDetail} />
+            <div className="hidden shrink-0 flex-wrap gap-1 xl:flex xl:opacity-0 xl:transition-opacity xl:group-hover:opacity-100 xl:group-focus-within:opacity-100">
+              {shouldShowQuickActions(activity) ? quickActions(activity) : null}
+            </div>
+          </div>
+          <div className="mt-2 flex flex-wrap items-center gap-2 xl:hidden">
+            {shouldShowQuickActions(activity) ? quickActions(activity) : null}
+          </div>
+          {renderStackedSummary(activity, status, dueDate, priority, 'mt-2 flex flex-wrap gap-2 md:hidden')}
+          {renderStackedSummary(activity, status, dueDate, priority, 'mt-2 hidden flex-wrap gap-2 md:flex xl:hidden')}
+        </div>
+        {tableColumns.map((column) => (
+          <div key={column.id} className="hidden min-w-0 items-center text-sm text-stone-700 dark:text-foreground xl:flex">
+            {column.render(activity, { status, dueDate, priority })}
+          </div>
+        ))}
+        <div className="col-span-full flex flex-wrap items-center justify-end gap-2 pl-10 md:col-span-1 md:pl-0">
+          <TableRowActions
+            activity={activity}
+            quickActions={null}
+            onOpenDetail={handleOpenActivityDetail}
+            onDelete={setDeleteConfirm}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  const renderTableRow = (activity: Activity, sortable = false) => {
+    return sortable ? <SortableActivityTableRow key={activity.id} activity={activity} /> : <ActivityTableRow key={activity.id} activity={activity} />;
+  };
+
+  function SortableLegacyActivityRow({ activity }: { activity: Activity }) {
+    const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: activity.id });
     const isCompleting = activity.id in completingActivities;
 
-    if (sortable) {
-      return (
-        <SortableActivityItem
-          key={activity.id}
+    return (
+      <div ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 }}>
+        <ActivityItem
           activity={activity}
           tags={tags}
           customFields={listFields}
@@ -567,11 +970,21 @@ export function ActivityList({
           onUpdate={onUpdate}
           onDelete={setDeleteConfirm}
           onDoubleClick={handleOpenActivityDetail}
+          dragHandleProps={listeners}
           allowReopen={allowReopenCompleted || isCompleting}
           quickActions={shouldShowQuickActions(activity) ? quickActions(activity) : undefined}
           completionState={isCompleting ? 'transitioning' : 'idle'}
         />
-      );
+        <div className="hidden" {...attributes} />
+      </div>
+    );
+  }
+
+  const renderLegacyRow = (activity: Activity, sortable = false) => {
+    const isCompleting = activity.id in completingActivities;
+
+    if (sortable) {
+      return <SortableLegacyActivityRow key={activity.id} activity={activity} />;
     }
 
     return (
@@ -598,77 +1011,57 @@ export function ActivityList({
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <h2 className="text-lg font-semibold">Atividades</h2>
-            <Tabs value={panelMode} onValueChange={(value) => setPanelMode(value as 'list' | 'schedule')}>
-              <TabsList className="h-8">
-                <TabsTrigger value="list" className="gap-1 px-2.5 text-xs">
-                  <ListTodo className="h-3.5 w-3.5" />
-                  Lista
-                </TabsTrigger>
-                <TabsTrigger value="schedule" className="gap-1 px-2.5 text-xs">
-                  <CalendarRange className="h-3.5 w-3.5" />
-                  Cronograma
-                </TabsTrigger>
-              </TabsList>
-            </Tabs>
           </div>
           <div className="flex items-center gap-1">
-            {panelMode === 'list' && (
-              <>
-                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setIsSearching((prev) => !prev)}>
-                  <Search className="h-4 w-4" />
-                </Button>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="icon" className="h-8 w-8">
-                      <ArrowUpDown className="h-4 w-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuLabel>Ordenar por</DropdownMenuLabel>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuRadioGroup value={sortOption} onValueChange={(value) => onSortChange(value as SortOption)}>
-                      {availableSortOptions.map((option) => (
-                        <DropdownMenuRadioItem key={option} value={option}>
-                          {sortLabels[option]}
-                        </DropdownMenuRadioItem>
-                      ))}
-                      </DropdownMenuRadioGroup>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="icon" className="h-8 w-8">
-                      <Filter className="h-4 w-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
+            <>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-8 w-8">
+                    <ArrowUpDown className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
-                    <DropdownMenuLabel>Filtrar por tags</DropdownMenuLabel>
+                    <DropdownMenuLabel>Ordenar por</DropdownMenuLabel>
                     <DropdownMenuSeparator />
-                    {tags.map((tag) => (
-                      <DropdownMenuCheckboxItem
-                        key={tag.id}
-                        checked={selectedTags.includes(tag.id)}
-                        onCheckedChange={() =>
-                          setSelectedTags((prev) => (prev.includes(tag.id) ? prev.filter((id) => id !== tag.id) : [...prev, tag.id]))
-                        }
-                      >
-                        <span className="mr-2 h-2 w-2 rounded-full" style={{ backgroundColor: tag.color }} />
-                        {tag.name}
-                      </DropdownMenuCheckboxItem>
+                    <DropdownMenuRadioGroup value={sortOption} onValueChange={(value) => onSortChange(value as SortOption)}>
+                    {availableSortOptions.map((option) => (
+                      <DropdownMenuRadioItem key={option} value={option}>
+                        {sortLabels[option]}
+                      </DropdownMenuRadioItem>
                     ))}
+                    </DropdownMenuRadioGroup>
                   </DropdownMenuContent>
                 </DropdownMenu>
-              </>
-            )}
-            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onOpenSettings}>
-              <Settings className="h-4 w-4" />
-            </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-8 w-8">
+                    <Filter className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuLabel>Filtrar por tags</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  {tags.map((tag) => (
+                    <DropdownMenuCheckboxItem
+                      key={tag.id}
+                      checked={selectedTags.includes(tag.id)}
+                      onCheckedChange={() =>
+                        setSelectedTags((prev) => (prev.includes(tag.id) ? prev.filter((id) => id !== tag.id) : [...prev, tag.id]))
+                      }
+                    >
+                      <span className="mr-2 h-2 w-2 rounded-full" style={{ backgroundColor: tag.color }} />
+                      {tag.name}
+                    </DropdownMenuCheckboxItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </>
           </div>
         </div>
 
-        {panelMode === 'list' && (
-          <>
-            <div className="mt-3 flex flex-wrap gap-2">
+        <div className="mt-3 flex flex-col gap-3">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex flex-wrap gap-2">
               {viewOptions.map((option) => {
                 return (
                   <Button key={option.id} variant={viewMode === option.id ? 'default' : 'outline'} size="sm" onClick={() => setViewMode(option.id)}>
@@ -679,34 +1072,33 @@ export function ActivityList({
               })}
             </div>
 
-            {viewMode === 'projects' && (
-              <div className="mt-3">
-                <Select value={selectedProject} onValueChange={setSelectedProject}>
-                  <SelectTrigger className="h-9">
-                    <SelectValue placeholder="Todos os projetos" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Todos os projetos</SelectItem>
-                    {projectNames.map((project) => (
-                      <SelectItem key={project} value={project}>
-                        {project}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-          </>
-        )}
+            <Button onClick={() => setShowNewActivityDialog(true)} className="w-full lg:w-auto lg:min-w-[180px]">
+              <Plus className="mr-2 h-4 w-4" />
+              Nova Atividade
+            </Button>
+          </div>
+
+          {viewMode === 'projects' && (
+            <div className="lg:max-w-sm">
+              <Select value={selectedProject} onValueChange={setSelectedProject}>
+                <SelectTrigger className="h-9">
+                  <SelectValue placeholder="Todos os projetos" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos os projetos</SelectItem>
+                  {projectNames.map((project) => (
+                    <SelectItem key={project} value={project}>
+                      {project}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+        </div>
       </div>
 
-      {panelMode === 'list' && isSearching && (
-        <div className="shrink-0 border-b px-4 py-2">
-          <Input placeholder="Buscar atividades, projetos, bloqueios..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="h-8" autoFocus />
-        </div>
-      )}
-
-      {panelMode === 'list' && selectedTags.length > 0 && (
+      {selectedTags.length > 0 && (
         <div className="shrink-0 flex flex-wrap gap-1 border-b px-4 py-2">
           {selectedTags.map((tagId) => {
             const tag = tags.find((item) => item.id === tagId);
@@ -726,55 +1118,36 @@ export function ActivityList({
         </div>
       )}
 
-      {panelMode === 'list' && (
-        <div className="shrink-0 flex items-center justify-center border-b px-4 py-3">
-          <Button onClick={() => setShowNewActivityDialog(true)} className="w-full">
-            <Plus className="mr-2 h-4 w-4" />
-            Nova Atividade
-          </Button>
-        </div>
-      )}
-
-      {panelMode === 'schedule' ? (
-        <ActivitySchedule
-          currentDate={currentDate}
-          activeActivities={activities.active}
-          allActivities={allActivities}
-          onOpenActivity={handleOpenCalendarActivityDetail}
-          onToggleComplete={handleToggleComplete}
-        />
-      ) : (
-      <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2">
-        {viewMode === 'projects' && selectedProject === 'all' ? (
-          <div className="space-y-4">
-            {projectNames.length === 0 ? (
-              <div className="py-8 text-center text-muted-foreground">Nenhum projeto associado ainda.</div>
-            ) : (
-              projectNames.map((project) => {
-                const projectActivities = displayActive.filter((activity) => getProjectName(activity) === project);
-                if (projectActivities.length === 0) return null;
-                return (
-                  <div key={project} className="space-y-2">
-                    <div className="sticky top-0 z-10 rounded-md bg-background/95 px-3 py-2 text-sm font-semibold backdrop-blur">
-                      {project} <span className="text-muted-foreground">({projectActivities.length})</span>
-                    </div>
-                    {projectActivities.map((activity) => renderActivity(activity))}
-                  </div>
-                );
-              })
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-2">
+        <div className={visualVariant === 'legacy' ? 'rounded-[22px] border border-[#d8d0c4] bg-[#fbf7f1] shadow-[0_10px_35px_rgba(82,59,33,0.06)] dark:border-border dark:bg-card' : 'overflow-x-auto rounded-[22px] border border-[#d8d0c4] bg-[#fbf7f1] shadow-[0_10px_35px_rgba(82,59,33,0.06)] dark:border-border dark:bg-card'}>
+          <div className="min-w-full">
+            {visualVariant === 'table' && (
+              <div
+                style={{ ['--activity-grid-template' as string]: desktopGridTemplate }}
+                className="hidden items-center gap-5 border-b border-[#d8d0c4] bg-[#f3eee6] px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.24em] text-stone-500 dark:border-border dark:bg-muted/40 dark:text-muted-foreground xl:grid xl:[grid-template-columns:var(--activity-grid-template)]"
+              >
+                <span />
+                <span />
+                <span>Atividade</span>
+                {tableColumns.map((column) => (
+                  <span key={column.id}>{column.label}</span>
+                ))}
+                <span className="text-right">Acoes</span>
+              </div>
             )}
+            <div className={visualVariant === 'legacy' ? 'space-y-1 px-2 py-2' : undefined}>
+              {canDrag ? (
+                <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+                  <SortableContext items={displayActive.map((activity) => activity.id)} strategy={verticalListSortingStrategy}>
+                    {displayActive.map((activity) => visualVariant === 'legacy' ? renderLegacyRow(activity, true) : renderTableRow(activity, true))}
+                  </SortableContext>
+                </DndContext>
+              ) : (
+                displayActive.map((activity) => visualVariant === 'legacy' ? renderLegacyRow(activity) : renderTableRow(activity))
+              )}
+            </div>
           </div>
-        ) : canDrag ? (
-          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-            <SortableContext items={displayActive.map((activity) => activity.id)} strategy={verticalListSortingStrategy}>
-              {displayActive.map((activity) => renderActivity(activity, true))}
-            </SortableContext>
-          </DndContext>
-        ) : (
-          <div className="space-y-1">
-            {displayActive.map((activity) => renderActivity(activity))}
-          </div>
-        )}
+        </div>
 
         {displayActive.length === 0 && (
           <div className="py-8 text-center text-muted-foreground">
@@ -812,7 +1185,6 @@ export function ActivityList({
           </div>
         )}
       </div>
-      )}
 
       {selectedActivity && selectedActivityState && (
         <Suspense fallback={null}>

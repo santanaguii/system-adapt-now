@@ -9,6 +9,7 @@ import {
   Heading1,
   Heading2,
   Highlighter,
+  X,
   Italic,
   List,
   Loader2,
@@ -75,7 +76,7 @@ function getSelectionBlock() {
 
   const anchorNode = selection.anchorNode;
   const element = anchorNode instanceof HTMLElement ? anchorNode : anchorNode?.parentElement;
-  return element?.closest('h1, h2, blockquote, p, li') ?? null;
+  return element?.closest('h1, h2, blockquote, p, li, div') ?? null;
 }
 
 function getBlockTextContent(block: HTMLElement) {
@@ -206,6 +207,16 @@ function replaceBlockTag(block: HTMLElement, nextTagName: 'p' | 'h1' | 'h2' | 'b
 
 function normalizeEmptyStructuralBlocks(root: HTMLDivElement) {
   let changed = false;
+
+  root.querySelectorAll('div').forEach((node) => {
+    const block = node as HTMLElement;
+    if (block.dataset.collapseToggle) {
+      return;
+    }
+
+    replaceBlockTag(block, 'p');
+    changed = true;
+  });
 
   root.querySelectorAll('h1, h2, blockquote').forEach((node) => {
     const block = node as HTMLElement;
@@ -393,10 +404,6 @@ export function NewVisualNotesWorkspace({
   };
 
   const handleToolbarMouseDown = (event: React.MouseEvent<HTMLElement>) => {
-    const target = event.target as HTMLElement;
-    if (target.closest('button')) {
-      event.preventDefault();
-    }
     saveEditorSelection();
   };
 
@@ -451,6 +458,7 @@ export function NewVisualNotesWorkspace({
   };
 
   const applyBlockStyle = (value: RichBlockStyle) => {
+    saveEditorSelection();
     restoreEditorSelection();
     editorRef.current?.focus();
 
@@ -496,10 +504,66 @@ export function NewVisualNotesWorkspace({
     persistEditorContent();
   };
 
+  const getPrefixFormatting = (text: string): { value: RichBlockStyle; prefixLength: number } | null => {
+    const prefixMap: Array<[string, RichBlockStyle]> = [
+      ['## ', 'h2'],
+      ['# ', 'h1'],
+      ['// ', 'comment'],
+      ['> ', 'blockquote'],
+      ['- ', 'bullet'],
+      ['* ', 'bullet'],
+    ];
+
+    for (const [prefix, value] of prefixMap) {
+      if (text.startsWith(prefix)) {
+        return { value, prefixLength: prefix.length };
+      }
+    }
+
+    return null;
+  };
+
+  const removePrefixText = (block: HTMLElement, count: number) => {
+    const walker = document.createTreeWalker(block, NodeFilter.SHOW_TEXT, null);
+    let currentNode = walker.nextNode() as Text | null;
+
+    while (currentNode && count > 0) {
+      const text = currentNode.textContent ?? '';
+      if (text.length <= count) {
+        currentNode.textContent = '';
+        count -= text.length;
+      } else {
+        currentNode.textContent = text.slice(count);
+        count = 0;
+      }
+      currentNode = walker.nextNode() as Text | null;
+    }
+  };
+
+  const applyPrefixFormatting = (block: HTMLElement) => {
+    const blockText = getBlockTextContent(block);
+    const formatting = getPrefixFormatting(blockText);
+    if (!formatting) {
+      return false;
+    }
+
+    removePrefixText(block, formatting.prefixLength);
+    applyBlockStyle(formatting.value);
+    return true;
+  };
+
   const handleEditorInput = () => {
     if (editorRef.current) {
       normalizeEmptyStructuralBlocks(editorRef.current);
       ensureHeadingControls(editorRef.current);
+
+      const currentBlock = getSelectionBlock();
+      if (currentBlock instanceof HTMLElement) {
+        const transformed = applyPrefixFormatting(currentBlock);
+        if (transformed) {
+          ensureHeadingControls(editorRef.current);
+        }
+      }
     }
     persistEditorContent();
     updateToolbarState();
@@ -519,6 +583,37 @@ export function NewVisualNotesWorkspace({
   const handleEditorKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
     if (!editorRef.current) {
       return;
+    }
+
+    if (event.ctrlKey && !event.altKey && !event.metaKey) {
+      const formattingShortcutMap: Record<string, { command: string; value?: string }> = {
+        b: { command: 'bold' },
+        i: { command: 'italic' },
+        u: { command: 'underline' },
+      };
+
+      const formattingShortcut = formattingShortcutMap[event.key.toLowerCase()];
+      if (formattingShortcut) {
+        event.preventDefault();
+        runEditorCommand(formattingShortcut.command, formattingShortcut.value);
+        return;
+      }
+
+      const shortcutMap: Record<string, RichBlockStyle> = {
+        '1': 'h1',
+        '2': 'h2',
+        '3': 'blockquote',
+        '4': 'bullet',
+        '5': 'comment',
+        '0': 'paragraph',
+      };
+
+      const shortcutValue = shortcutMap[event.key];
+      if (shortcutValue) {
+        event.preventDefault();
+        applyBlockStyle(shortcutValue);
+        return;
+      }
     }
 
     if (event.key === 'Enter') {
@@ -787,19 +882,31 @@ export function NewVisualNotesWorkspace({
                   />
                 ))}
               </div>
-              <label className="flex h-8 items-center gap-2 rounded-lg px-2 text-xs text-muted-foreground hover:bg-background">
-                <Highlighter className="h-4 w-4" />
-                <input
-                  type="color"
-                  value={backgroundColor}
-                  onChange={(event) => {
-                    setBackgroundColor(event.target.value);
-                    runEditorCommand('hiliteColor', event.target.value);
-                  }}
-                  className="h-5 w-5 cursor-pointer rounded border-0 bg-transparent p-0"
-                  title="Cor de fundo"
-                />
-              </label>
+              <div className="flex items-center gap-1 rounded-lg px-1">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 rounded-lg"
+                  onClick={() => runEditorCommand('hiliteColor', 'transparent')}
+                  title="Remover cor de fundo"
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+                <label className="flex h-8 items-center gap-2 rounded-lg px-2 text-xs text-muted-foreground hover:bg-background">
+                  <Highlighter className="h-4 w-4" />
+                  <input
+                    type="color"
+                    value={backgroundColor}
+                    onChange={(event) => {
+                      setBackgroundColor(event.target.value);
+                      runEditorCommand('hiliteColor', event.target.value);
+                    }}
+                    className="h-5 w-5 cursor-pointer rounded border-0 bg-transparent p-0"
+                    title="Cor de fundo"
+                  />
+                </label>
+              </div>
               <div className="flex items-center gap-1 rounded-lg px-1">
                 {PRESET_BACKGROUND_COLORS.map((color) => (
                   <button
@@ -837,9 +944,13 @@ export function NewVisualNotesWorkspace({
                 }
                 updateToolbarState();
               }}
-              className="min-h-[calc(100vh-250px)] w-full rounded-2xl border border-transparent bg-transparent px-1 text-[17px] leading-8 text-foreground outline-none [&_blockquote]:my-2 [&_blockquote]:ml-10 [&_blockquote]:border-l-4 [&_blockquote]:border-border [&_blockquote]:pl-4 [&_blockquote]:italic [&_h1]:mb-2 [&_h1]:mt-3 [&_h1]:ml-10 [&_h1]:px-0 [&_h1]:py-0 [&_h1]:text-[2.6rem] [&_h1]:font-bold [&_h1]:leading-tight [&_h2]:mb-2 [&_h2]:mt-3 [&_h2]:ml-10 [&_h2]:px-0 [&_h2]:py-0 [&_h2]:text-[2rem] [&_h2]:font-semibold [&_h2]:leading-tight [&_h1[data-collapsible-heading='true']]:relative [&_h2[data-collapsible-heading='true']]:relative [&_ol]:my-2 [&_ol]:ml-10 [&_ol]:pl-8 [&_p]:my-2 [&_p]:ml-10 [&_p[data-note-style='comment']]:text-[15px] [&_p[data-note-style='comment']]:italic [&_p[data-note-style='comment']]:text-slate-500 [&_ul]:my-2 [&_ul]:ml-10 [&_ul]:list-disc [&_ul]:pl-8"
+              className="min-h-[calc(100vh-250px)] w-full rounded-2xl border border-transparent bg-transparent px-5 text-[17px] leading-6 text-foreground outline-none [&_blockquote]:my-1 [&_blockquote]:ml-0 [&_blockquote]:border-l-4 [&_blockquote]:border-border [&_blockquote]:pl-4 [&_blockquote]:italic [&_h1]:mb-1 [&_h1]:mt-2 [&_h1]:ml-0 [&_h1]:px-0 [&_h1]:py-0 [&_h1]:text-[2.6rem] [&_h1]:font-bold [&_h1]:leading-tight [&_h2]:mb-1 [&_h2]:mt-2 [&_h2]:ml-0 [&_h2]:px-0 [&_h2]:py-0 [&_h2]:text-[2rem] [&_h2]:font-semibold [&_h2]:leading-tight [&_h1[data-collapsible-heading='true']]:relative [&_h2[data-collapsible-heading='true']]:relative [&_ol]:my-1 [&_ol]:ml-0 [&_ol]:pl-8 [&_p]:my-1 [&_p]:ml-0 [&_p[data-note-style='comment']]:text-slate-400 [&_p[data-note-style='comment']]:italic [&_p[data-note-style='comment']]:line-through [&_p[data-note-style='comment']]:opacity-80 [&_ul]:my-1 [&_ul]:ml-0 [&_ul]:list-disc [&_ul]:pl-8"
               data-placeholder="Escreva livremente aqui..."
             />
+          </div>
+
+          <div className="border-t px-5 py-2 text-xs text-muted-foreground">
+            Atalhos: <span className="font-medium text-foreground">Ctrl+1</span> Título, <span className="font-medium text-foreground">Ctrl+2</span> Subtítulo, <span className="font-medium text-foreground">Ctrl+3</span> Citação, <span className="font-medium text-foreground">Ctrl+4</span> Tópico, <span className="font-medium text-foreground">Ctrl+5</span> Comentário, <span className="font-medium text-foreground">Ctrl+0</span> Texto normal, <span className="font-medium text-foreground">Ctrl+B</span> Negrito, <span className="font-medium text-foreground">Ctrl+I</span> Itálico, <span className="font-medium text-foreground">Ctrl+U</span> Sublinhado.
           </div>
         </div>
       </main>

@@ -13,6 +13,7 @@ interface AppTopBarProps {
   selectedSection?: NewVisualSection;
   onSectionChange?: (section: NewVisualSection) => void;
   leadingSlot?: ReactNode;
+  toolbarSlot?: ReactNode;
   className?: string;
 }
 
@@ -23,6 +24,7 @@ export function AppTopBar({
   selectedSection,
   onSectionChange,
   leadingSlot,
+  toolbarSlot,
   className,
 }: AppTopBarProps) {
   const sectionButtons: Array<{ id: NewVisualSection; label: string }> = [
@@ -55,6 +57,8 @@ export function AppTopBar({
       </div>
 
       <div className="flex items-center gap-1.5 sm:gap-2">
+        {toolbarSlot}
+
         <div className="hidden items-center gap-2 rounded-full border bg-muted/35 px-3 py-1.5 text-sm text-muted-foreground sm:flex">
           <User className="h-4 w-4" />
           <span className="max-w-[180px] truncate">{username}</span>

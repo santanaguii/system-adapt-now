@@ -48,7 +48,6 @@ export function ActivityItem({
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState(activity.title);
   const inputRef = useRef<HTMLInputElement>(null);
-  const clickTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     if (isEditing && inputRef.current) {
@@ -57,23 +56,9 @@ export function ActivityItem({
     }
   }, [isEditing]);
 
-  const handleClick = () => {
-    if (activity.completed) {
-      onDoubleClick(activity);
-      return;
-    }
-
-    if (clickTimeoutRef.current) {
-      clearTimeout(clickTimeoutRef.current);
-      clickTimeoutRef.current = null;
-      onDoubleClick(activity);
-    } else {
-      clickTimeoutRef.current = setTimeout(() => {
-        clickTimeoutRef.current = null;
-        setIsEditing(true);
-      }, 250);
-    }
-  };
+  useEffect(() => {
+    setEditValue(activity.title);
+  }, [activity.title]);
 
   const handleSave = () => {
     if (editValue.trim()) {
@@ -135,9 +120,10 @@ export function ActivityItem({
           disabled={activity.completed && !allowReopen}
           className="h-5 w-5 rounded-full border-2 data-[state=checked]:border-primary data-[state=checked]:bg-primary"
           onClick={(event) => event.stopPropagation()}
+          onDoubleClick={(event) => event.stopPropagation()}
         />
 
-        <div className="min-w-0 flex-1" onClick={handleClick}>
+        <div className="min-w-0 flex-1">
           {isEditing && !activity.completed ? (
             <input
               ref={inputRef}
@@ -147,11 +133,32 @@ export function ActivityItem({
               onBlur={handleSave}
               onKeyDown={handleKeyDown}
               className="w-full border-none bg-transparent text-foreground outline-none"
+              onClick={(event) => event.stopPropagation()}
+              onDoubleClick={(event) => event.stopPropagation()}
             />
           ) : (
             <div className="flex flex-col gap-1">
               <div className="flex items-center gap-2">
-                <span className={cn('truncate', activity.completed && 'line-through')}>{activity.title}</span>
+                <span
+                  className={cn(
+                    'truncate',
+                    !activity.completed && 'cursor-text',
+                    activity.completed && 'line-through'
+                  )}
+                  onClick={(event) => {
+                    if (activity.completed) {
+                      return;
+                    }
+                    event.stopPropagation();
+                    setIsEditing(true);
+                  }}
+                  onDoubleClick={(event) => {
+                    event.stopPropagation();
+                    onDoubleClick(activity);
+                  }}
+                >
+                  {activity.title}
+                </span>
                 {isFavorite && <Star className="h-3.5 w-3.5 fill-current text-amber-500" />}
                 {isCompleting && (
                   <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-300">
@@ -234,10 +241,6 @@ export function ActivityItem({
           className="h-7 w-7 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
           onClick={(event) => {
             event.stopPropagation();
-            if (clickTimeoutRef.current) {
-              clearTimeout(clickTimeoutRef.current);
-              clickTimeoutRef.current = null;
-            }
             onDoubleClick(activity);
           }}
           onDoubleClick={(event) => event.stopPropagation()}

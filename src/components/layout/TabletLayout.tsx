@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { Brand } from '@/components/brand/Brand';
 import { AppTopBar } from '@/components/layout/AppTopBar';
+import { AppVisualModeSelector } from '@/components/layout/AppVisualModeSelector';
 import { LogOut, User, Menu } from 'lucide-react';
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@/components/ui/resizable';
 import { Activity, AppVisualMode, CustomField, Tag, SortOption, DailyNote, NoteSearchResult, LineType, ActivityListDisplaySettings, FilterConfig, NoteLine, NoteTemplate, LayoutSettings } from '@/types';
@@ -61,6 +62,7 @@ interface TabletLayoutProps {
   onToggleComplete: (id: string) => void;
   onReorderActivities: (startIndex: number, endIndex: number) => void;
   onOpenSettings: () => void;
+  onAppVisualModeChange: (mode: AppVisualMode) => void;
   sortOption: SortOption;
   onSortChange: (sort: SortOption) => void;
   allowReopenCompleted: boolean;
@@ -110,6 +112,7 @@ export function TabletLayout({
   onToggleComplete,
   onReorderActivities,
   onOpenSettings,
+  onAppVisualModeChange,
   sortOption,
   onSortChange,
   allowReopenCompleted,
@@ -166,6 +169,7 @@ export function TabletLayout({
       allowReopenCompleted={allowReopenCompleted}
       showQuickRescheduleButtons={noteDateButtonsEnabled}
       quickRescheduleDaysThreshold={quickRescheduleDaysThreshold}
+      visualVariant="legacy"
     />
   );
 
@@ -176,6 +180,7 @@ export function TabletLayout({
           username={username}
           onOpenSettings={onOpenSettings}
           onSignOut={onSignOut}
+          toolbarSlot={<AppVisualModeSelector value={appVisualMode} onChange={onAppVisualModeChange} />}
           leadingSlot={layout.showNotesList && layout.showNotes ? (
             <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
               <SheetTrigger asChild>
@@ -233,6 +238,7 @@ export function TabletLayout({
             <Brand compact />
           </div>
           <div className="flex items-center gap-3">
+            <AppVisualModeSelector value={appVisualMode} onChange={onAppVisualModeChange} />
             <div className="hidden items-center gap-2 text-sm text-muted-foreground sm:flex">
               <User className="h-4 w-4" />
               <span>{username}</span>

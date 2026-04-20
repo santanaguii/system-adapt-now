@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { Brand } from '@/components/brand/Brand';
 import { AppTopBar } from '@/components/layout/AppTopBar';
+import { AppVisualModeSelector } from '@/components/layout/AppVisualModeSelector';
 import { LogOut, User, Settings, FileText, CheckSquare, Menu, ArrowRightLeft } from 'lucide-react';
 import { Activity, AppVisualMode, CustomField, Tag, SortOption, DailyNote, NoteSearchResult, LineType, ActivityListDisplaySettings, FilterConfig, NoteLine, NoteTemplate, LayoutSettings } from '@/types';
 import { SaveStatus } from '@/hooks/useNotes';
@@ -60,6 +61,7 @@ interface MobileLayoutProps {
   onToggleComplete: (id: string) => void;
   onReorderActivities: (startIndex: number, endIndex: number) => void;
   onOpenSettings: () => void;
+  onAppVisualModeChange: (mode: AppVisualMode) => void;
   sortOption: SortOption;
   onSortChange: (sort: SortOption) => void;
   allowReopenCompleted: boolean;
@@ -108,6 +110,7 @@ export function MobileLayout({
   onToggleComplete,
   onReorderActivities,
   onOpenSettings,
+  onAppVisualModeChange,
   sortOption,
   onSortChange,
   allowReopenCompleted,
@@ -180,6 +183,7 @@ export function MobileLayout({
       allowReopenCompleted={allowReopenCompleted}
       showQuickRescheduleButtons={noteDateButtonsEnabled}
       quickRescheduleDaysThreshold={quickRescheduleDaysThreshold}
+      visualVariant="legacy"
     />
   );
 
@@ -190,6 +194,7 @@ export function MobileLayout({
           username={username}
           onOpenSettings={onOpenSettings}
           onSignOut={onSignOut}
+          toolbarSlot={<AppVisualModeSelector value={appVisualMode} onChange={onAppVisualModeChange} />}
           leadingSlot={layout.showNotesList && layout.showNotes ? (
             <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
               <SheetTrigger asChild>
@@ -258,6 +263,7 @@ export function MobileLayout({
             </div>
           </div>
           <div className="flex items-center gap-1">
+            <AppVisualModeSelector value={appVisualMode} onChange={onAppVisualModeChange} />
             {!layout.showTabs && layout.showNotes && layout.showActivities && (
               <Button
                 variant="ghost"
